@@ -710,6 +710,37 @@ function parseCsv(text) {
   });
 }
 
+/* Spalten, in denen eine Spielart stehen könnte, und wie ihre Werte zu deuten sind. */
+const TYPE_COLS = ['type', 'typ', 'gametype', 'gamemode', 'spielart', 'spieltyp',
+                   'modus', 'mode', 'kategorie', 'category', 'format', 'variante', 'art'];
+const TYPE_WORDS = [
+  [/^(mtt|sng|sit.?n?.?go|turnier|tournament|tourney|t)$/i, 'mtt'],
+  [/^(cash|cashgame|cash.?game|ring|ringgame|cg|c)$/i, 'cash'],
+  [/^(casino|cas|slots?|roulette|blackjack|bj|automat)$/i, 'casino'],
+  [/turnier|tournament|mtt|sng/i, 'mtt'],
+  [/cash|ring/i, 'cash'],
+  [/casino|roulette|blackjack|slot/i, 'casino'],
+];
+
+/** Findet die Spalte, die die Spielart enthält — oder null. */
+function findTypeColumn(rows) {
+  if (!rows.length) return null;
+  const cols = Object.keys(rows[0]);
+  const named = cols.find((c) => TYPE_COLS.includes(c));
+  if (named && rows.some((r) => mapType(r[named]))) return named;
+  // Kein passender Name: Spalte suchen, deren Werte durchweg Spielarten sind
+  return cols.find((c) => rows.every((r) => !r[c] || mapType(r[c]))
+                       && rows.some((r) => mapType(r[c]))) || null;
+}
+
+/** Freitext → 'cash' | 'mtt' | 'casino' | null */
+function mapType(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return null;
+  for (const [re, t] of TYPE_WORDS) if (re.test(s)) return t;
+  return null;
+}
+
 /** CSV-Zeile → Session. Dauer = Ende − Start − Pausen. */
 function csvToSession(r, type) {
   const start = new Date(r.start);
@@ -739,13 +770,31 @@ function readCsv(file) {
     const valid = rows.filter((x) => x.start && !isNaN(new Date(x.start)));
     if (!valid.length) { alert('Keine Zeilen mit gültiger Spalte "start" gefunden.'); return; }
 
-    const preview = valid.slice(0, 3)
-      .map((x) => `${dfShort.format(new Date(x.start))} · ${signed(num(x.profit) - num(x.expenses))}`)
-      .join('<br>');
     const sum = valid.reduce((a, x) => a + num(x.profit) - num(x.expenses), 0);
 
+    // Spielart automatisch aus der CSV lesen, sonst alles auf Cash vorbelegen
+    const typeCol = findTypeColumn(valid);
+    const types = valid.map((x) => (typeCol && mapType(x[typeCol])) || 'cash');
+    const auto = valid.filter((x, i) => typeCol && mapType(x[typeCol])).length;
+
+    const rowHtml = (x, i) => {
+      const p = num(x.profit) - num(x.expenses);
+      const st = new Date(x.start), en = new Date(x.end);
+      const dur = Math.max(0, Math.round((isNaN(en) ? 0 : (en - st) / 60000) - num(x.breakminutes)));
+      return `<div class="imp-row">
+        <div class="imp-info">
+          <div class="imp-d">${dfShort.format(st)}${dur ? ' · ' + fmtDur(dur) : ''}${x.location ? ' · ' + esc(x.location) : ''}</div>
+          <div class="imp-p ${cls(p)}">${signed(p)}</div>
+        </div>
+        <div class="seg imp-seg" data-i="${i}">
+          ${TYPE_KEYS.map((k) => `<button type="button" data-t="${k}"
+             class="${types[i] === k ? 'on' : ''}">${k === 'cash' ? 'Cash' : k === 'mtt' ? 'MTT' : 'Cas'}</button>`).join('')}
+        </div>
+      </div>`;
+    };
+
     openSheet('CSV importieren', `
-      <div class="bd" style="margin-bottom:16px">
+      <div class="bd" style="margin-bottom:14px">
         <div class="bd-row"><span>Gefundene Sessions</span><span class="c"></span><span class="v">${valid.length}</span></div>
         <div class="bd-row"><span>Summe Gewinn/Verlust</span><span class="c"></span>
           <span class="v ${cls(sum)}">${signed(sum)}</span></div>
@@ -753,27 +802,51 @@ function readCsv(file) {
           ${dfShort.format(new Date(Math.min(...valid.map((x) => +new Date(x.start)))))} –
           ${dfShort.format(new Date(Math.max(...valid.map((x) => +new Date(x.start)))))}</span></div>
       </div>
-      <div class="hint" style="margin-bottom:14px">Erste Zeilen:<br>${preview}</div>
-      <div class="sec-title">In welche Bankroll?</div>
-      <div class="typepick" id="csvType" style="margin-top:10px">${TYPE_KEYS.map((k, i) =>
-        `<button type="button" data-type="${k}" class="${i === 0 ? 'on' : ''}">
-           <span class="em">${TYPES[k].em}</span>${TYPES[k].label}</button>`).join('')}</div>
-      <p class="hint">Die CSV enthält nur das Netto-Ergebnis, keine Buy-ins. Buy-in wird
-        deshalb auf 0 gesetzt und das Ergebnis als Cash-out eingetragen — Gewinn und
-        Stundenrate stimmen dadurch, „Ø Buy-in" bleibt leer. Alle Einträge bekommen den
-        Tag <b>Import</b>.</p>
-      <button class="btn btn-primary btn-block" id="csvGo" style="margin-top:8px">
-        ${valid.length} Sessions hinzufügen</button>
+
+      <div class="hint" style="margin-bottom:12px">${typeCol
+        ? `Spielart automatisch aus der Spalte <b>${esc(typeCol)}</b> erkannt — ${auto} von ${valid.length} Zeilen zugeordnet.`
+        : `Die CSV enthält <b>keine Spalte mit der Spielart</b>. Ordne die Sessions unten zu
+           — oder ergänze in der Tabelle eine Spalte <b>type</b> mit <code>cash</code> bzw.
+           <code>turnier</code>, dann geht es automatisch.`}</div>
+
+      <div class="sec-title">Alle setzen auf</div>
+      <div class="btn-row" id="csvAll" style="margin:8px 0 14px">
+        ${TYPE_KEYS.map((k) => `<button type="button" class="btn btn-sm" data-all="${k}">${TYPES[k].label}</button>`).join('')}
+      </div>
+
+      <div class="sec-title">Zuordnung je Session</div>
+      <div class="imp-list" id="csvRows">${valid.map(rowHtml).join('')}</div>
+
+      <p class="hint" style="margin-top:14px">Die CSV enthält nur das Netto-Ergebnis, keine
+        Buy-ins. Buy-in wird deshalb auf 0 gesetzt und das Ergebnis als Cash-out geführt —
+        Gewinn und Stundenrate stimmen dadurch, „Ø Buy-in" und ROI bleiben leer.
+        Alle Einträge bekommen den Tag <b>Import</b>.</p>
+      <button class="btn btn-primary btn-block" id="csvGo" style="margin-top:8px"></button>
     `, null);
 
-    let type = 'cash';
-    $('#csvType').onclick = (e) => {
-      const b = e.target.closest('[data-type]'); if (!b) return;
-      type = b.dataset.type;
-      $$('#csvType button').forEach((x) => x.classList.toggle('on', x === b));
+    const refresh = () => {
+      const n = (k) => types.filter((t) => t === k).length;
+      $('#csvGo').textContent = `${valid.length} Sessions importieren  ·  `
+        + TYPE_KEYS.filter((k) => n(k)).map((k) => `${n(k)} ${TYPES[k].label}`).join(', ');
+    };
+    refresh();
+
+    $('#csvRows').onclick = (e) => {
+      const b = e.target.closest('[data-t]'); if (!b) return;
+      const seg = b.closest('.imp-seg');
+      types[+seg.dataset.i] = b.dataset.t;
+      $$('button', seg).forEach((x) => x.classList.toggle('on', x === b));
+      refresh();
+    };
+    $('#csvAll').onclick = (e) => {
+      const b = e.target.closest('[data-all]'); if (!b) return;
+      types.fill(b.dataset.all);
+      $$('.imp-seg', $('#csvRows')).forEach((seg) => $$('button', seg)
+        .forEach((x) => x.classList.toggle('on', x.dataset.t === b.dataset.all)));
+      refresh();
     };
     $('#csvGo').onclick = () => {
-      const added = valid.map((x) => csvToSession(x, type)).filter(Boolean);
+      const added = valid.map((x, i) => csvToSession(x, types[i])).filter(Boolean);
       db.sessions.push(...added);
       if (!db.tags.includes('Import')) db.tags.push('Import');
       save(); closeSheet(); nav('sessions');

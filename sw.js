@@ -1,6 +1,6 @@
 /* Service Worker — App offline verfügbar halten.
    Bei jeder Änderung an den Dateien CACHE hochzählen. */
-const CACHE = 'pokertracker-v1';
+const CACHE = 'pokertracker-v2';
 const ASSETS = [
   './',
   './index.html',
