@@ -1,6 +1,6 @@
 /* Service Worker — App offline verfügbar halten.
    Bei jeder Änderung an den Dateien CACHE hochzählen. */
-const CACHE = 'pokertracker-v2';
+const CACHE = 'pokertracker-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -14,7 +14,14 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache:'reload' erzwingt frische Dateien vom Server. Ohne das würden die
+  // Dateien aus dem HTTP-Cache des Browsers geholt (GitHub Pages sendet
+  // max-age=600) — der neue Cache enthielte dann die alte Version.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {

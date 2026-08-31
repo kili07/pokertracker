@@ -4,6 +4,9 @@
 'use strict';
 
 const KEY = 'pokertracker.v1';
+/* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
+   damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
+const APP_VERSION = '1.2.0';
 
 const TYPES = {
   cash:   { label: 'Cash Game', short: 'CASH', em: '♠️' },
@@ -647,11 +650,14 @@ function openSettings() {
     <label style="margin:8px 0 12px">Eigene Tags (mit Komma getrennt)
       <input id="setTags" value="${esc(db.tags.join(', '))}"></label>
     <div class="divider" style="margin:18px 0"></div>
-    <div class="bd" style="margin-bottom:18px">
+    <div class="bd" style="margin-bottom:14px">
       <div class="bd-row"><span>Sessions</span><span class="c"></span><span class="v">${db.sessions.length}</span></div>
       <div class="bd-row"><span>Buchungen</span><span class="c"></span><span class="v">${db.txns.length}</span></div>
       <div class="bd-row"><span>Speicher</span><span class="c"></span><span class="v">${nf0.format(new Blob([JSON.stringify(db)]).size / 1024)} KB</span></div>
+      <div class="bd-row" id="verRow"><span>Version</span><span class="c"></span><span class="v">${APP_VERSION}</span></div>
+      <div class="bd-row"><span>Offline-Cache</span><span class="c"></span><span class="v" id="swState">—</span></div>
     </div>
+    <button class="btn btn-block" id="btnUpdate" style="margin-bottom:18px">Nach Update suchen</button>
     <button class="btn btn-danger btn-block" id="btnWipe">Alle Daten löschen</button>
   `, () => {
     db.tags = $('#setTags').value.split(',').map((t) => t.trim()).filter(Boolean);
@@ -663,6 +669,8 @@ function openSettings() {
   $('#fileImport').onchange = (e) => importBackup(e.target.files[0]);
   $('#btnCsv').onclick = () => $('#fileCsv').click();
   $('#fileCsv').onchange = (e) => readCsv(e.target.files[0]);
+  showSwState();
+  $('#btnUpdate').onclick = checkForUpdate;
   $('#btnWipe').onclick = () => {
     if (!confirm('Wirklich ALLE Sessions und Buchungen löschen? Das lässt sich nicht rückgängig machen.')) return;
     db.sessions = []; db.txns = []; db.live = null;
@@ -693,6 +701,103 @@ function importBackup(file) {
     } catch (e) { alert('Import fehlgeschlagen: ' + e.message); }
   };
   r.readAsText(file);
+}
+
+/* ── Update-Verwaltung ──────────────────────────────────────── */
+/** Welche APP_VERSION liegt im Offline-Cache? Das ist die Fassung,
+    die beim nächsten Laden ausgeliefert wird — nicht zwingend die laufende. */
+async function cachedVersion() {
+  if (!('caches' in window)) return null;
+  for (const k of await caches.keys()) {
+    if (!k.startsWith('pokertracker')) continue;
+    const c = await caches.open(k);
+    const res = (await c.match('./app.js')) || (await c.match('app.js'));
+    if (!res) continue;
+    const m = (await res.text()).match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+async function cacheName() {
+  if (!('caches' in window)) return 'nicht unterstützt';
+  return (await caches.keys()).find((k) => k.startsWith('pokertracker')) || 'leer';
+}
+
+async function showSwState() {
+  const el = $('#swState'); if (!el) return;
+  if (!('serviceWorker' in navigator)) { el.textContent = 'nicht unterstützt'; return; }
+  const cv = await cachedVersion();
+  el.textContent = await cacheName();
+  const vr = $('#verRow');
+  if (vr && cv && cv !== APP_VERSION) {
+    vr.innerHTML = `<span>Version</span><span class="c">${esc(cv)} bereit</span>
+      <span class="v down">${APP_VERSION} veraltet</span>`;
+  }
+}
+
+/** Lädt neu, wenn im Cache eine andere Fassung liegt als die laufende.
+    Die Sperre in sessionStorage verhindert eine Endlosschleife, falls das
+    Neuladen die Version wider Erwarten nicht ändert. */
+let reloading = false;
+async function applyIfNewer(announce) {
+  if (reloading) return false;
+  const cv = await cachedVersion();
+  if (!cv || cv === APP_VERSION) return false;
+  if (sessionStorage.getItem('pt-reload') === cv) return false;   // schon versucht
+  if (!$('#sheet').classList.contains('hidden')) {                // Formular offen
+    toast(`Version ${cv} bereit — App neu starten`);
+    return true;
+  }
+  reloading = true;
+  sessionStorage.setItem('pt-reload', cv);
+  if (announce) toast(`Version ${cv} wird geladen …`);
+  setTimeout(() => location.reload(), announce ? 700 : 0);
+  return true;
+}
+
+async function checkForUpdate() {
+  if (!('serviceWorker' in navigator)) { toast('Kein Offline-Cache aktiv'); return; }
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) { toast('Kein Offline-Cache aktiv'); return; }
+  toast('Suche nach Update …');
+  sessionStorage.removeItem('pt-reload');          // manuelle Prüfung: Sperre lösen
+  try { await reg.update(); } catch (e) { toast('Keine Verbindung'); return; }
+  // Dem neuen Worker Zeit geben, seinen Cache zu füllen
+  for (let i = 0; i < 20; i++) {
+    if (await applyIfNewer(true)) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  toast(`Bereits aktuell (${APP_VERSION})`);
+  showSwState();
+}
+
+function wireUpdates() {
+  if (!('serviceWorker' in navigator)) return;
+
+  /* Auf 'controllerchange' ist kein Verlass: aktualisiert sich dieselbe
+     Registrierung, gilt die Seite nicht als "neu kontrolliert" und das
+     Ereignis bleibt aus. Verlässlich ist der Zustandswechsel des neuen
+     Workers auf 'activated' — dann liegt der frische Cache bereit. */
+  const watch = (w) => {
+    if (!w) return;
+    if (w.state === 'activated') { applyIfNewer(false); return; }
+    w.addEventListener('statechange', () => {
+      if (w.state === 'activated') applyIfNewer(false);
+    });
+  };
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => applyIfNewer(false));
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      watch(reg.installing); watch(reg.waiting);
+      reg.addEventListener('updatefound', () => watch(reg.installing));
+      // Beim Start prüfen: liegt aus einem früheren Besuch schon Neueres bereit?
+      navigator.serviceWorker.ready.then(() => applyIfNewer(false));
+      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    }).catch(() => {});
+  });
 }
 
 /* ── CSV-Import aus anderen Trackern ────────────────────────── */
@@ -1025,6 +1130,4 @@ nav('home');
 if (db.live) openLive();
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
-}
+wireUpdates();
