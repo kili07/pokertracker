@@ -6,7 +6,19 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.4.1';
+
+/* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
+   <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
+   sie muss mit --bg in style.css übereinstimmen. */
+const THEME_KEY = 'pokertracker.theme';
+const THEMES = {
+  midnight: { label: 'Midnight', note: 'Tiefblau, ruhig',    bar: '#0b0e14' },
+  daylight: { label: 'Daylight', note: 'Hell, für den Tag',  bar: '#f3f5f9' },
+  felt:     { label: 'Felt',     note: 'Pokertisch & Gold',  bar: '#0b1511' },
+  neon:     { label: 'Neon',     note: 'Schwarz mit Cyan',   bar: '#06070c' },
+};
+const THEME_KEYS = Object.keys(THEMES);
 
 const TYPES = {
   cash:   { label: 'Cash Game', short: 'CASH', em: '♠️' },
@@ -15,24 +27,63 @@ const TYPES = {
 };
 const TYPE_KEYS = ['cash', 'mtt', 'casino'];
 
+/* Spielertypen für die Gegner-Einschätzung. */
+const P_STYLES = {
+  unknown: { label: 'Unbekannt', em: '❔' },
+  fish:    { label: 'Fisch',     em: '🐟' },
+  nit:     { label: 'Nit',       em: '🪨' },
+  tag:     { label: 'TAG',       em: '🎯' },
+  lag:     { label: 'LAG',       em: '⚡' },
+  maniac:  { label: 'Maniac',    em: '🔥' },
+};
+const P_STYLE_KEYS = Object.keys(P_STYLES);
+
 /* ── Persistenz ─────────────────────────────────────────────── */
-let db = {
-  v: 1,
-  sessions: [],   // {id,type,date,location,durationMin,…,notes,tags}
-  txns: [],       // {id,type,date,amount,note}   Ein-/Auszahlungen
+/** Frische Grundstruktur. Wird beim Laden und beim Backup-Import als Basis
+    benutzt, damit später ergänzte Felder in alten Daten nicht fehlen. */
+const blank = () => ({
+  v: 2,
+  sessions: [],   // {id,type,date,location,durationMin,…,notes,tags,playerIds}
+  txns: [],       // {id,type,date,amount,note,kind?}   Ein-/Auszahlungen
   live: null,     // laufende Session
   tags: ['Gut gespielt', 'Tilt', 'Müde', 'Guter Tisch', 'Schwerer Tisch'],
-};
+  players: [],    // {id,name,style,loose,aggro,traits,notes:[{id,date,text,sessionId}]}
+  playerTags: ['Callt zu viel', 'Foldet zu viel', '3-Bettet light', 'Bluffed oft',
+    'Limpt', 'Tiltet schnell', 'Spielt Position', 'Overbets', 'Nur Premium'],
+  theme: 'midnight',   // Darstellung, siehe THEMES
+  setup: false,        // Start-Bankroll schon abgefragt?
+  lastBackup: null,    // ISO-Datum des letzten Backups
+  lastBackupCount: 0,  // Anzahl Einträge zu dem Zeitpunkt
+  snoozeBackup: 0,     // Hinweis bis zu diesem Zeitstempel ausgeblendet
+});
+
+let db = blank();
 
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) db = Object.assign(db, JSON.parse(raw));
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    db = Object.assign(blank(), parsed);
+    // Daten aus einer Fassung vor den Themes: das zuletzt gesetzte Theme
+    // steht dann nur im Spiegel, nicht im Datensatz.
+    if (!parsed.theme) db.theme = localStorage.getItem(THEME_KEY) || db.theme;
   } catch (e) { console.warn('Laden fehlgeschlagen', e); }
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); }
   catch (e) { toast('Speichern fehlgeschlagen!'); console.error(e); }
+}
+
+/** Theme aufs Dokument legen. Der Spiegel in THEME_KEY ist das, was das
+    Startskript in index.html liest — ohne ihn flackert der Start. */
+function applyTheme(t) {
+  if (!THEMES[t]) t = 'midnight';
+  db.theme = t;
+  document.documentElement.dataset.theme = t;
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = THEMES[t].bar;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* nicht schlimm */ }
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
@@ -46,6 +97,7 @@ const money = (v) => (v < 0 ? '−' : '') + nfa.format(Math.abs(v)) + ' €';
 const signed = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + nfa.format(Math.abs(v)) + ' €';
 const cls = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 const pct = (v) => nfa.format(v * 100) + ' %';
+const plural = (n, ein, viele) => `${n} ${n === 1 ? ein : viele}`;
 
 function fmtDur(min) {
   min = Math.round(min);
@@ -116,8 +168,43 @@ function curve(k) {
   return ev.map((e) => ({ ...e, y: (acc += e.v) }));
 }
 
+/* ── Gegner ─────────────────────────────────────────────────── */
+const playerById = (id) => db.players.find((p) => p.id === id);
+const sessionsWith = (pid) => db.sessions.filter((s) => (s.playerIds || []).includes(pid));
+const styleOf = (p) => P_STYLES[p && p.style] || P_STYLES.unknown;
+
+/** Legt an oder liefert den vorhandenen Spieler — Namensvergleich ohne
+    Groß-/Kleinschreibung, damit "Max" und "max" nicht zweimal auftauchen. */
+function findOrCreatePlayer(name) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const hit = db.players.find((p) => p.name.toLowerCase() === n.toLowerCase());
+  if (hit) return hit;
+  const p = {
+    id: uid(), name: n, style: 'unknown', loose: 3, aggro: 3,
+    traits: [], notes: [], createdAt: new Date().toISOString(),
+  };
+  db.players.push(p);
+  return p;
+}
+
+function addPlayerNote(pid, text, sessionId) {
+  const p = playerById(pid); if (!p || !String(text).trim()) return;
+  p.notes.push({ id: uid(), date: new Date().toISOString(), text: String(text).trim(), sessionId: sessionId || null });
+  save();
+}
+
+/** Kennzahlen eines Gegners: wie oft zusammen gespielt, wie Du dabei abgeschnitten hast. */
+function playerStats(pid) {
+  const list = sessionsWith(pid);
+  const p = list.reduce((a, s) => a + profit(s), 0);
+  const h = list.reduce((a, s) => a + hours(s), 0);
+  const last = list.reduce((a, s) => (!a || new Date(s.date) > new Date(a) ? s.date : a), null);
+  return { n: list.length, profit: p, hours: h, last, list };
+}
+
 /* ── Navigation ─────────────────────────────────────────────── */
-const TITLES = { home: 'Übersicht', sessions: 'Sessions', stats: 'Statistik', ev: 'EV-Rechner' };
+const TITLES = { home: 'Übersicht', sessions: 'Sessions', players: 'Gegner', stats: 'Statistik', ev: 'EV-Rechner' };
 let view = 'home';
 
 function nav(v) {
@@ -132,14 +219,54 @@ function nav(v) {
 function render() {
   if (view === 'home') { renderHome(); }
   else if (view === 'sessions') { renderSessions(); }
+  else if (view === 'players') { renderPlayers(); }
   else if (view === 'stats') { renderStats(); }
   renderLiveBar();
+}
+
+/* ── Backup-Erinnerung ──────────────────────────────────────── */
+/** Liefert den Hinweistext — oder null, wenn gerade nichts ansteht.
+    Absichtlich zurückhaltend: erst ab ein paar Einträgen, nach dem Wegklicken
+    zwei Wochen Ruhe. Die Daten liegen nur auf dem Gerät, und wer die App
+    weitergibt, kann sich nicht darauf verlassen, dass die README gelesen wird. */
+function backupHint() {
+  if (!db.sessions.length) return null;
+  if (db.snoozeBackup && Date.now() < db.snoozeBackup) return null;
+
+  const n = db.sessions.length + db.txns.length;
+  if (!db.lastBackup) {
+    return n >= 3
+      ? 'Deine Daten liegen nur auf diesem Gerät. Sichere sie einmal — sonst sind sie beim Handywechsel weg.'
+      : null;
+  }
+  const neu = n - (db.lastBackupCount || 0);
+  const tage = Math.floor((Date.now() - new Date(db.lastBackup)) / 864e5);
+  if (neu >= 5 || (neu > 0 && tage >= 21)) {
+    return `Letztes Backup vor ${tage} Tag${tage === 1 ? '' : 'en'}, seitdem ${neu} neue${neu === 1 ? 'r Eintrag' : ' Einträge'}.`;
+  }
+  return null;
+}
+
+function renderBackupHint() {
+  const box = $('#backupNote'); if (!box) return;
+  const msg = backupHint();
+  box.classList.toggle('hidden', !msg);
+  if (!msg) return;
+  box.innerHTML = `<div class="notice-t">${esc(msg)}</div>
+    <button class="btn btn-sm" id="noteSave">Sichern</button>
+    <button class="link" id="noteHide" aria-label="Ausblenden">✕</button>`;
+  $('#noteSave').onclick = exportBackup;
+  $('#noteHide').onclick = () => {
+    db.snoozeBackup = Date.now() + 14 * 864e5;
+    save(); renderBackupHint();
+  };
 }
 
 /* ── Übersicht ──────────────────────────────────────────────── */
 let chartKey = 'all';
 
 function renderHome() {
+  renderBackupHint();
   const total = bankroll('all');
   $('#totalBankroll').textContent = money(total);
   $('#totalBankroll').className = 'hero-value ' + cls(total);
@@ -250,6 +377,173 @@ function renderSessions() {
   $('#sessionList').innerHTML = html;
 }
 
+/* ── Gegner-Liste ───────────────────────────────────────────── */
+let playerSort = 'last';
+
+function renderPlayers() {
+  const box = $('#playerList');
+  if (!db.players.length) {
+    box.innerHTML = `<div class="empty">Noch keine Gegner erfasst.<br>
+      Trage sie beim Anlegen einer Session ein — oder oben auf „＋ Gegner“ tippen.</div>`;
+    return;
+  }
+  const rows = db.players.map((p) => ({ p, st: playerStats(p.id) }));
+  rows.sort((a, b) =>
+    playerSort === 'name'   ? a.p.name.localeCompare(b.p.name, 'de') :
+    playerSort === 'profit' ? b.st.profit - a.st.profit :
+                              new Date(b.st.last || 0) - new Date(a.st.last || 0));
+
+  box.innerHTML = rows.map(({ p, st }) => {
+    const bits = [styleOf(p).label];
+    bits.push(st.n ? `${st.n}× zusammen` : 'noch keine Session');
+    if (st.last) bits.push(fmtDate(st.last));
+    if (p.notes.length) bits.push(`${p.notes.length} Notiz${p.notes.length === 1 ? '' : 'en'}`);
+    return `<button class="row" data-player="${p.id}">
+      <span class="pl-em">${styleOf(p).em}</span>
+      <span class="row-main">
+        <span class="row-t">${esc(p.name)}</span>
+        <span class="row-s">${bits.join(' · ')}</span>
+      </span>
+      <span class="row-v ${st.n ? cls(st.profit) : ''}">${st.n ? signed(st.profit) : '—'}</span>
+    </button>`;
+  }).join('');
+}
+
+/* ── Gegner-Profil ──────────────────────────────────────────── */
+/** Liest die Formularfelder des Profils zurück in den Spieler. */
+function readPlayerForm(p) {
+  const name = $('#pl_name');
+  if (!name) return;
+  p.name = name.value.trim() || p.name;
+  const st = $('#pl_style .tag.on');
+  p.style = st ? st.dataset.st : 'unknown';
+  p.loose = num($('#pl_loose').value);
+  p.aggro = num($('#pl_aggro').value);
+  p.traits = $$('#pl_traits .tag.on').map((b) => b.dataset.tag);
+}
+
+function openPlayer(id) {
+  const p = playerById(id); if (!p) return;
+  const st = playerStats(id);
+  const notes = [...p.notes].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  openSheet(p.name, `
+    <label>Name<input id="pl_name" value="${esc(p.name)}"></label>
+
+    <div class="sec-title" style="margin-top:16px">Spielertyp</div>
+    <div class="tagbox" id="pl_style">${P_STYLE_KEYS.map((k) =>
+      `<button type="button" class="tag ${k === (p.style || 'unknown') ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${P_STYLES[k].label}</button>`).join('')}</div>
+
+    <div class="sec-title" style="margin-top:16px">Einschätzung</div>
+    <div class="scale"><span>Tight</span>
+      <input type="range" id="pl_loose" min="1" max="5" step="1" value="${num(p.loose) || 3}"><span>Loose</span></div>
+    <div class="scale"><span>Passiv</span>
+      <input type="range" id="pl_aggro" min="1" max="5" step="1" value="${num(p.aggro) || 3}"><span>Aggro</span></div>
+
+    <div class="sec-title" style="margin-top:16px">Merkmale</div>
+    <div class="tagbox" id="pl_traits">${db.playerTags.map((t) =>
+      `<button type="button" class="tag ${(p.traits || []).includes(t) ? 'on' : ''}" data-tag="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+
+    <div class="divider" style="margin:18px 0"></div>
+    <div class="bd" style="margin-bottom:18px">
+      <div class="bd-row"><span>Zusammen gespielt</span>
+        <span class="c">${st.hours ? nfa.format(st.hours) + ' h' : ''}</span>
+        <span class="v">${st.n}×</span></div>
+      <div class="bd-row"><span>Dein Ergebnis dabei</span>
+        <span class="c">${st.hours ? signed(st.profit / st.hours) + '/h' : ''}</span>
+        <span class="v ${cls(st.profit)}">${st.n ? signed(st.profit) : '—'}</span></div>
+      <div class="bd-row"><span>Zuletzt gesehen</span><span class="c"></span>
+        <span class="v">${st.last ? fmtDate(st.last) : '—'}</span></div>
+    </div>
+
+    <div class="sec-title">Notiz anhängen</div>
+    <textarea id="pl_newNote" placeholder="Was ist Dir aufgefallen?"></textarea>
+    <button class="btn btn-block" id="plAddNote" style="margin:8px 0 20px">Notiz speichern</button>
+
+    <div class="sec-title">Verlauf (${p.notes.length})</div>
+    <div class="notelist">${notes.length ? notes.map((n) => `<div class="note">
+        <div class="note-h"><span>${dfLong.format(new Date(n.date))}</span>
+          <button class="link" data-ndel="${n.id}">✕</button></div>
+        <div class="note-t">${esc(n.text)}</div></div>`).join('')
+      : '<div class="empty" style="padding:14px">Noch keine Notizen</div>'}</div>
+
+    <button class="btn btn-danger btn-block" id="plDelete" style="margin-top:20px">Gegner löschen</button>
+  `, () => {
+    readPlayerForm(p); save(); closeSheet(); render(); toast('Profil gespeichert');
+  });
+
+  // Spielertyp ist einfach-, Merkmale sind mehrfach-Auswahl
+  $('#pl_style').onclick = (e) => {
+    const b = e.target.closest('[data-st]'); if (!b) return;
+    $$('#pl_style .tag').forEach((x) => x.classList.toggle('on', x === b));
+  };
+  $('#pl_traits').onclick = (e) => {
+    const b = e.target.closest('[data-tag]'); if (!b) return;
+    b.classList.toggle('on');
+  };
+
+  $('#plAddNote').onclick = () => {
+    const t = $('#pl_newNote').value.trim();
+    if (!t) { toast('Notiz ist leer'); return; }
+    readPlayerForm(p);              // offene Änderungen nicht verlieren
+    addPlayerNote(p.id, t);
+    openPlayer(p.id);               // Liste neu aufbauen
+    toast('Notiz angehängt');
+  };
+
+  $('#plDelete').onclick = () => {
+    readPlayerForm(p);
+    askSheet('Gegner löschen',
+      `„${p.name}“ wird mit ${plural(p.notes.length, 'Notiz', 'Notizen')} entfernt. Deine Sessions bleiben erhalten.`,
+      'Löschen', () => {
+        db.players = db.players.filter((x) => x.id !== p.id);
+        db.sessions.forEach((s) => {
+          if (s.playerIds) s.playerIds = s.playerIds.filter((x) => x !== p.id);
+        });
+        save(); closeSheet(); render(); toast('Gegner gelöscht');
+      }, () => openPlayer(p.id), true);
+  };
+
+  $('#sheetBody').onclick = (e) => {
+    const b = e.target.closest('[data-ndel]'); if (!b) return;
+    readPlayerForm(p);
+    p.notes = p.notes.filter((n) => n.id !== b.dataset.ndel);
+    save(); openPlayer(p.id);
+  };
+}
+
+/** Gegner anlegen ohne Umweg über eine Session. */
+function newPlayerSheet() {
+  openSheet('Neuer Gegner', `
+    <label>Name<input id="np_name" placeholder="z.B. Andi vom Donnerstag" autocomplete="off"></label>
+    <div class="sec-title" style="margin-top:16px">Spielertyp <span class="muted">(kannst Du später ändern)</span></div>
+    <div class="tagbox" id="np_style">${P_STYLE_KEYS.map((k) =>
+      `<button type="button" class="tag ${k === 'unknown' ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${P_STYLES[k].label}</button>`).join('')}</div>
+    <div class="hint" style="margin-top:14px">Einschätzung, Merkmale und Notizen ergänzt Du
+      gleich danach im Profil.</div>
+  `, () => {
+    const name = $('#np_name').value.trim();
+    if (!name) { toast('Name fehlt'); return; }
+    const bekannt = db.players.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    const p = findOrCreatePlayer(name);
+    if (!bekannt) {
+      const st = $('#np_style .tag.on');
+      p.style = st ? st.dataset.st : 'unknown';
+    }
+    save(); render();
+    toast(bekannt ? `„${p.name}“ gibt es schon` : 'Gegner angelegt');
+    openPlayer(p.id);          // direkt ins Profil, Notiz ist meist der nächste Schritt
+  }, 'Anlegen');
+
+  $('#np_style').onclick = (e) => {
+    const b = e.target.closest('[data-st]'); if (!b) return;
+    $$('#np_style .tag').forEach((x) => x.classList.toggle('on', x === b));
+  };
+  const inp = $('#np_name');
+  inp.focus();
+  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sheetSaveFn && sheetSaveFn(); } };
+}
+
 /* ── Statistik ──────────────────────────────────────────────── */
 let statKey = 'all';
 
@@ -325,7 +619,8 @@ let sheetSaveFn = null;
 function openSheet(title, html, saveFn, saveLabel) {
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = html;
-  $('#sheetBody').onclick = null;   // Handler des vorherigen Sheets verwerfen
+  $('#sheetBody').onclick = null;         // Handler des vorherigen Sheets verwerfen
+  $('#sheetCancel').onclick = closeSheet; // ggf. überschriebenes Abbrechen zurücksetzen
   sheetSaveFn = saveFn || null;
   const btn = $('#sheetSave');
   btn.classList.toggle('hidden', !saveFn);
@@ -338,6 +633,65 @@ function closeSheet() {
   $('#sheet').classList.add('hidden');
   $('#scrim').classList.add('hidden');
   sheetSaveFn = null;
+}
+
+/* ── Dialoge ────────────────────────────────────────────────────
+   Ersatz für confirm() / prompt() / alert(): installierte Web-Apps
+   unterdrücken die nativen Dialoge je nach Gerät kommentarlos — der
+   Knopf tut dann scheinbar nichts. Diese hier sind normale Sheets und
+   funktionieren überall gleich.
+   `back` führt zurück zum vorherigen Sheet statt alles zuzuklappen. */
+
+function askSheet(title, text, okLabel, onOk, back, danger) {
+  openSheet(title, `
+    <p class="dlg-t">${esc(text)}</p>
+    <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block" id="dlgOk">${esc(okLabel)}</button>
+    <button class="btn btn-block" id="dlgNo" style="margin-top:8px">Abbrechen</button>
+  `, null);
+  const zurueck = () => (back ? back() : closeSheet());
+  $('#dlgOk').onclick = onOk;
+  $('#dlgNo').onclick = zurueck;
+  $('#sheetCancel').onclick = zurueck;
+}
+
+function infoSheet(title, text, back) {
+  openSheet(title, `
+    <p class="dlg-t">${esc(text)}</p>
+    <button class="btn btn-primary btn-block" id="dlgOk">Verstanden</button>
+  `, null);
+  const zurueck = () => (back ? back() : closeSheet());
+  $('#dlgOk').onclick = zurueck;
+  $('#sheetCancel').onclick = zurueck;
+}
+
+/** Einzeiliger Texteingabe-Dialog. `opts`: {value, placeholder, numeric, okLabel} */
+function askText(title, label, opts, onOk, back) {
+  opts = opts || {};
+  openSheet(title, `
+    <label>${esc(label)}<input id="dlg_in" ${opts.numeric ? 'type="number" inputmode="decimal" step="any"' : 'autocomplete="off"'}
+      placeholder="${esc(opts.placeholder || '')}" value="${esc(opts.value == null ? '' : opts.value)}"></label>
+  `, () => onOk($('#dlg_in').value), opts.okLabel || 'Übernehmen');
+  if (back) $('#sheetCancel').onclick = back;
+  const inp = $('#dlg_in');
+  inp.focus(); inp.select && inp.select();
+  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sheetSaveFn && sheetSaveFn(); } };
+}
+
+/** Mehrzeiliger Notiz-Dialog für einen Gegner. */
+function askPlayerNote(pid, back) {
+  const p = playerById(pid); if (!p) return;
+  openSheet('Notiz zu ' + p.name, `
+    <label>Beobachtung<textarea id="dlg_note" placeholder="Was ist Dir aufgefallen?"></textarea></label>
+    <div class="hint" style="margin-top:8px">Wird mit Datum an das Profil angehängt — vorhandene Notizen bleiben stehen.</div>
+  `, () => {
+    const t = $('#dlg_note').value.trim();
+    if (!t) { toast('Notiz ist leer'); return; }
+    addPlayerNote(p.id, t);
+    back ? back() : closeSheet();
+    toast('Notiz zu ' + p.name + ' gespeichert');
+  }, 'Anhängen');
+  if (back) $('#sheetCancel').onclick = back;
+  $('#dlg_note').focus();
 }
 
 /* ── Neue / bestehende Session ──────────────────────────────── */
@@ -375,26 +729,50 @@ function tagsHTML(sel) {
     `</div>`;
 }
 
-/** mode: 'new' (Typwahl + Live-Start) | 'edit' (Löschen) | 'finish' (Live-Abschluss) */
+/** Nur die Chips — wird nach dem Anlegen eines neuen Gegners neu gezeichnet. */
+function playerChips(sel) {
+  sel = sel || [];
+  if (!db.players.length) return '<span class="hint">Noch keine Gegner angelegt.</span>';
+  return [...db.players]
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    .map((p) => `<button type="button" class="tag ${sel.includes(p.id) ? 'on' : ''}" data-pid="${p.id}">${styleOf(p).em} ${esc(p.name)}</button>`)
+    .join('');
+}
+
+function playersHTML(sel) {
+  return `<div class="sec-title">Gegner am Tisch</div>
+    <div class="tagbox" id="f_opp">${playerChips(sel)}</div>
+    <div class="addrow">
+      <input id="f_newOpp" placeholder="Gegner hinzufügen" autocomplete="off">
+      <button type="button" class="btn btn-sm" id="btnAddOpp">＋</button>
+    </div>`;
+}
+
+/** mode: 'new' (Typwahl + Live-Start) | 'edit' (Löschen)
+          | 'finish' (Live-Abschluss) | 'live' (Details der laufenden Session) */
 function sessionForm(type, s, mode) {
   s = s || {};
   const d = s.date ? new Date(s.date) : new Date();
   const dm = num(s.durationMin);
+  const live = mode === 'live';
   return `
     ${mode === 'new' ? `<div class="typepick" id="typePick">${TYPE_KEYS.map((k) =>
       `<button type="button" data-type="${k}" class="${k === type ? 'on' : ''}">
          <span class="em">${TYPES[k].em}</span>${TYPES[k].label}</button>`).join('')}</div>` : ''}
     <div class="form-grid">
-      <label>Datum &amp; Uhrzeit<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
+      <label>${live ? 'Beginn' : 'Datum &amp; Uhrzeit'}<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
       <label>Ort<input id="f_location" list="locs" placeholder="z.B. Casino Wien" value="${esc(s.location || '')}"></label>
       <datalist id="locs">${[...new Set(db.sessions.map((x) => x.location).filter(Boolean))]
         .map((l) => `<option value="${esc(l)}">`).join('')}</datalist>
+      ${live ? '<div class="hint">Die Dauer kommt von der laufenden Uhr und läuft weiter.</div>' : `
       <div class="form-grid two">
         <label>Dauer — Stunden<input id="f_h" type="number" inputmode="numeric" placeholder="0" value="${dm ? Math.floor(dm / 60) : ''}"></label>
         <label>Minuten<input id="f_m" type="number" inputmode="numeric" placeholder="0" value="${dm ? dm % 60 : ''}"></label>
-      </div>
+      </div>`}
       <div class="divider"></div>
       <div id="typeFields">${fieldsFor(type, s)}</div>
+      <div class="divider"></div>
+      ${playersHTML(s.playerIds)}
       <div class="divider"></div>
       ${tagsHTML(s.tags)}
       <label>Notizen<textarea id="f_notes" placeholder="Wie lief die Session?">${esc(s.notes || '')}</textarea></label>
@@ -419,11 +797,38 @@ function wireForm(existing) {
     const b = e.target.closest('[data-tag]'); if (!b) return;
     b.classList.toggle('on');
   };
+
+  const opp = $('#f_opp');
+  if (opp) opp.onclick = (e) => {
+    const b = e.target.closest('[data-pid]'); if (!b) return;
+    b.classList.toggle('on');
+  };
+  const addOpp = $('#btnAddOpp'), oppInp = $('#f_newOpp');
+  if (addOpp && oppInp) {
+    // Neuer Gegner wird sofort gespeichert — die Gegner-Liste hängt nicht
+    // daran, ob diese Session am Ende gesichert wird.
+    const doAdd = () => {
+      const p = findOrCreatePlayer(oppInp.value);
+      if (!p) return;
+      const sel = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
+      if (!sel.includes(p.id)) sel.push(p.id);
+      save();
+      opp.innerHTML = playerChips(sel);
+      oppInp.value = '';
+      oppInp.focus();
+    };
+    addOpp.onclick = doAdd;
+    oppInp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } };
+  }
+
   const del = $('#btnDelete');
   if (del) del.onclick = () => {
-    if (!confirm('Diese Session wirklich löschen?')) return;
-    db.sessions = db.sessions.filter((x) => x.id !== existing.id);
-    save(); closeSheet(); render(); toast('Session gelöscht');
+    askSheet('Session löschen',
+      `${TYPES[existing.type].label} vom ${fmtDate(existing.date)} über ${signed(profit(existing))} wird entfernt.`,
+      'Löschen', () => {
+        db.sessions = db.sessions.filter((x) => x.id !== existing.id);
+        save(); closeSheet(); render(); toast('Session gelöscht');
+      }, () => editSession(existing.id), true);
   };
   const live = $('#btnStartLive');
   if (live) live.onclick = () => startLive();
@@ -435,9 +840,12 @@ function readForm(type, base) {
   s.type = type;
   s.date = new Date(g('f_date') || Date.now()).toISOString();
   s.location = g('f_location').trim();
-  s.durationMin = num(g('f_h')) * 60 + num(g('f_m'));
+  // Bei der laufenden Session gibt es keine Dauer-Felder — dann bleibt der
+  // Wert aus `base` stehen, die Uhr ist die Quelle.
+  if ($('#f_h') || $('#f_m')) s.durationMin = num(g('f_h')) * 60 + num(g('f_m'));
   s.notes = g('f_notes').trim();
   s.tags = $$('#f_tags .tag.on').map((b) => b.dataset.tag);
+  if ($('#f_opp')) s.playerIds = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
 
   if (type === 'cash') {
     s.stakes = g('f_stakes').trim();
@@ -519,12 +927,13 @@ function openLive() {
   const L = db.live; if (!L) return;
   const d = L.data;
   const addLabel = L.type === 'cash' ? 'Nachkauf hinzufügen' : 'Re-entry / Addon';
+  const opp = (d.playerIds || []).map(playerById).filter(Boolean);
   openSheet(TYPES[L.type].label + ' läuft', `
     <div class="live-panel">
       <div class="live-clock" id="lvClock">${fmtClock(elapsed())}</div>
       <div class="live-state" id="lvState">${L.running ? 'läuft' : 'pausiert'}</div>
     </div>
-    <div class="bd" style="margin-bottom:16px">
+    <div class="bd" style="margin-bottom:10px">
       <div class="bd-row"><span>Ort</span><span class="c"></span><span class="v">${esc(d.location || '—')}</span></div>
       ${L.type === 'cash'
         ? `<div class="bd-row"><span>Stakes</span><span class="c"></span><span class="v">${esc(d.stakes || '—')}</span></div>
@@ -532,6 +941,13 @@ function openLive() {
         : `<div class="bd-row"><span>Entries</span><span class="c"></span><span class="v" id="lvEntries">${d.entries || 1}</span></div>
            <div class="bd-row"><span>Investiert</span><span class="c"></span><span class="v" id="lvIn">${money(invested(d))}</span></div>`}
     </div>
+    <button class="btn btn-block" id="lvEdit" style="margin-bottom:16px">✎ Details bearbeiten</button>
+
+    <div class="sec-title">Gegner am Tisch</div>
+    <div class="tagbox" id="lvOpp" style="margin-bottom:16px">${opp.length
+      ? opp.map((p) => `<button type="button" class="tag" data-note="${p.id}">${styleOf(p).em} ${esc(p.name)} <span class="muted">✎</span></button>`).join('')
+      : '<span class="hint">Über „Details bearbeiten“ eintragen.</span>'}</div>
+
     <div class="btn-row" style="margin-bottom:8px">
       <button class="btn" id="lvToggle">${L.running ? '⏸ Pause' : '▶︎ Weiter'}</button>
       <button class="btn" id="lvAdd">＋ ${addLabel}</button>
@@ -540,25 +956,54 @@ function openLive() {
     <button class="btn btn-danger btn-block" id="lvCancel" style="margin-top:8px">Verwerfen</button>
   `, null);
 
+  $('#lvEdit').onclick = () => editLiveDetails();
+  $('#lvOpp').onclick = (e) => {
+    const b = e.target.closest('[data-note]'); if (!b) return;
+    askPlayerNote(b.dataset.note, openLive);
+  };
+
   $('#lvToggle').onclick = () => {
     if (L.running) { L.elapsedMs = elapsed(); L.running = false; }
     else { L.lastStart = Date.now(); L.running = true; }
     save(); openLive(); renderLiveBar();
   };
   $('#lvAdd').onclick = () => {
-    const label = L.type === 'cash' ? 'Betrag des Nachkaufs (€)' : 'Zusätzliche Entries';
-    const val = prompt(label, L.type === 'cash' ? String(num(d.buyin) || '') : '1');
-    if (val == null) return;
-    if (L.type === 'cash') d.buyin = num(d.buyin) + num(val);
-    else d.entries = Math.max(1, num(d.entries) || 1) + Math.max(1, num(val) || 1);
-    save(); openLive();
-    toast(L.type === 'cash' ? 'Nachkauf erfasst' : 'Re-entry erfasst');
+    const cash = L.type === 'cash';
+    askText(cash ? 'Nachkauf' : 'Re-entry / Addon',
+      cash ? 'Betrag des Nachkaufs (€)' : 'Zusätzliche Entries',
+      { numeric: true, value: cash ? (num(d.buyin) || '') : 1, okLabel: 'Hinzufügen' },
+      (val) => {
+        const v = num(val);
+        if (!v) { toast('Betrag fehlt'); return; }
+        if (cash) d.buyin = num(d.buyin) + v;
+        else d.entries = Math.max(1, num(d.entries) || 1) + Math.max(1, v);
+        save(); openLive();
+        toast(cash ? 'Nachkauf erfasst' : 'Re-entry erfasst');
+      }, openLive);
   };
   $('#lvCancel').onclick = () => {
-    if (!confirm('Laufende Session verwerfen? Sie wird nicht gespeichert.')) return;
-    db.live = null; save(); closeSheet(); render();
+    askSheet('Session verwerfen', 'Die laufende Session wird nicht gespeichert. Die Uhr und alle Eingaben sind dann weg.',
+      'Verwerfen', () => { db.live = null; save(); closeSheet(); render(); toast('Session verworfen'); },
+      openLive, true);
   };
   $('#lvEnd').onclick = () => endLive();
+}
+
+/** Ort, Stakes, Buy-in, Gegner & Notizen ändern, während die Uhr läuft.
+    Die Dauer bleibt außen vor — die kommt aus dem Timer. */
+function editLiveDetails() {
+  const L = db.live; if (!L) return;
+  formType = L.type;
+  const d = Object.assign({}, L.data, { date: L.startedAt });
+  openSheet('Details bearbeiten', sessionForm(L.type, d, 'live'), () => {
+    const upd = readForm(L.type, { id: L.data.id, durationMin: L.data.durationMin });
+    L.startedAt = upd.date;
+    Object.assign(L.data, upd);
+    save(); closeSheet(); renderLiveBar(); openLive();
+    toast('Details aktualisiert');
+  });
+  wireForm(null);
+  $('#sheetCancel').onclick = () => { openLive(); };   // zurück, nicht zumachen
 }
 
 function endLive() {
@@ -627,9 +1072,72 @@ function openBankroll(k) {
   };
 }
 
+/* ── Start-Bankroll ─────────────────────────────────────────── */
+const startTxn = (k) => db.txns.find((t) => t.kind === 'start' && t.type === k);
+
+/** Anfangsstand je Bereich. Wird als normale Buchung abgelegt, damit die
+    Bankroll-Rechnung unverändert bleibt — nur mit `kind:'start'` markiert,
+    um sie später wieder ersetzen zu können. */
+function openStartBankroll(first) {
+  const others = [...db.sessions, ...db.txns.filter((t) => t.kind !== 'start')];
+  const earliest = others.map((x) => +new Date(x.date)).sort((a, b) => a - b)[0];
+  const ex = TYPE_KEYS.map(startTxn).find(Boolean);
+  // Der Stichtag muss vor dem ersten Eintrag liegen, sonst springt die Kurve.
+  const d0 = ex ? new Date(ex.date) : earliest ? new Date(earliest - 60000) : new Date();
+
+  openSheet('Start-Bankroll', `
+    <p class="hint" style="margin-bottom:14px">Womit fängst Du an? Der Betrag wird als
+      erste Buchung abgelegt, Deine Sessions rechnen ab da weiter. Lässt sich jederzeit
+      in den Einstellungen ändern.</p>
+    <label>Stichtag<input id="sb_date" type="datetime-local" value="${localISO(d0)}"></label>
+    <div class="form-grid" style="margin-top:12px">
+      ${TYPE_KEYS.map((k) => `<label>${TYPES[k].em} ${TYPES[k].label} (€)
+        <input id="sb_${k}" type="number" inputmode="decimal" step="any" placeholder="0"
+          value="${startTxn(k) ? num(startTxn(k).amount) : ''}"></label>`).join('')}
+    </div>
+    <div class="hint" style="margin-top:10px">Leer lassen heißt: bei null anfangen.<br>
+      Alles bleibt auf diesem Gerät — kein Konto, keine Cloud, niemand sieht Deine Zahlen.</div>
+    ${first ? '<button class="btn btn-block" id="sbSkip" style="margin-top:20px">Später</button>' : ''}
+  `, () => {
+    const date = new Date($('#sb_date').value || Date.now()).toISOString();
+    db.txns = db.txns.filter((t) => t.kind !== 'start');
+    TYPE_KEYS.forEach((k) => {
+      const a = num($('#sb_' + k).value);
+      if (a) db.txns.push({ id: uid(), type: k, kind: 'start', date, amount: a, note: 'Start-Bankroll' });
+    });
+    db.setup = true;
+    save(); closeSheet(); render(); toast('Start-Bankroll gesetzt');
+  }, 'Übernehmen');
+
+  const skip = $('#sbSkip');
+  if (skip) skip.onclick = () => { db.setup = true; save(); closeSheet(); };
+}
+
 /* ── Einstellungen / Backup ─────────────────────────────────── */
 function openSettings() {
   openSheet('Einstellungen', `
+    <div class="sec-title">Darstellung</div>
+    <p class="hint" style="margin:8px 0 12px">Tippe einen Stil an — er greift sofort,
+      auch die untere Leiste ändert sich mit.</p>
+    <div class="themes" id="themePick">
+      ${THEME_KEYS.map((k) => `
+        <button class="theme-card${db.theme === k ? ' on' : ''}" data-th="${k}">
+          <span class="tprev t-${k}">
+            <span class="tp-t"></span><span class="tp-s"></span><span class="tp-a"></span>
+            <span class="tp-c"></span><span class="tp-b"></span>
+          </span>
+          <span class="theme-name">
+            <span class="n">${esc(THEMES[k].label)}</span>
+            <span class="d">${esc(THEMES[k].note)}</span>
+          </span>
+        </button>`).join('')}
+    </div>
+    <div class="divider" style="margin:18px 0"></div>
+    <div class="sec-title">Bankroll</div>
+    <p class="hint" style="margin:8px 0 12px">Anfangsstand je Bereich — der Betrag, den Du
+      hattest, bevor Du hier angefangen hast zu tracken.</p>
+    <button class="btn btn-block" id="btnStart" style="margin-bottom:18px">Start-Bankroll festlegen</button>
+    <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Datensicherung</div>
     <p class="hint" style="margin:8px 0 12px">Deine Daten liegen nur in diesem Browser.
       Lade regelmäßig ein Backup herunter — z.B. in Google Drive.</p>
@@ -647,23 +1155,38 @@ function openSettings() {
     <input type="file" id="fileCsv" accept="text/csv,.csv" class="hidden">
     <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Tags verwalten</div>
-    <label style="margin:8px 0 12px">Eigene Tags (mit Komma getrennt)
+    <label style="margin:8px 0 12px">Session-Tags (mit Komma getrennt)
       <input id="setTags" value="${esc(db.tags.join(', '))}"></label>
+    <label style="margin:8px 0 12px">Gegner-Merkmale (mit Komma getrennt)
+      <input id="setPlayerTags" value="${esc(db.playerTags.join(', '))}"></label>
     <div class="divider" style="margin:18px 0"></div>
     <div class="bd" style="margin-bottom:14px">
       <div class="bd-row"><span>Sessions</span><span class="c"></span><span class="v">${db.sessions.length}</span></div>
       <div class="bd-row"><span>Buchungen</span><span class="c"></span><span class="v">${db.txns.length}</span></div>
+      <div class="bd-row"><span>Gegner</span><span class="c">${db.players.reduce((a, p) => a + p.notes.length, 0)} Notizen</span><span class="v">${db.players.length}</span></div>
       <div class="bd-row"><span>Speicher</span><span class="c"></span><span class="v">${nf0.format(new Blob([JSON.stringify(db)]).size / 1024)} KB</span></div>
       <div class="bd-row" id="verRow"><span>Version</span><span class="c"></span><span class="v">${APP_VERSION}</span></div>
       <div class="bd-row"><span>Offline-Cache</span><span class="c"></span><span class="v" id="swState">—</span></div>
     </div>
     <button class="btn btn-block" id="btnUpdate" style="margin-bottom:18px">Nach Update suchen</button>
     <button class="btn btn-danger btn-block" id="btnWipe">Alle Daten löschen</button>
+    <p class="credit">Gebaut von Kilian</p>
   `, () => {
-    db.tags = $('#setTags').value.split(',').map((t) => t.trim()).filter(Boolean);
+    const split = (id) => $(id).value.split(',').map((t) => t.trim()).filter(Boolean);
+    db.tags = split('#setTags');
+    db.playerTags = split('#setPlayerTags');
     save(); closeSheet(); toast('Gespeichert');
   });
 
+  /* Theme sofort anwenden statt erst beim Sichern — der Sinn der Auswahl ist ja,
+     das Ergebnis zu sehen. Das Sheet bleibt dabei offen. */
+  $('#themePick').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-th]'); if (!b) return;
+    applyTheme(b.dataset.th); save();
+    $$('.theme-card', $('#themePick')).forEach((c) => c.classList.toggle('on', c === b));
+  });
+
+  $('#btnStart').onclick = () => openStartBankroll(false);
   $('#btnExport').onclick = exportBackup;
   $('#btnImport').onclick = () => $('#fileImport').click();
   $('#fileImport').onchange = (e) => importBackup(e.target.files[0]);
@@ -672,19 +1195,30 @@ function openSettings() {
   showSwState();
   $('#btnUpdate').onclick = checkForUpdate;
   $('#btnWipe').onclick = () => {
-    if (!confirm('Wirklich ALLE Sessions und Buchungen löschen? Das lässt sich nicht rückgängig machen.')) return;
-    db.sessions = []; db.txns = []; db.live = null;
-    save(); closeSheet(); render(); toast('Alle Daten gelöscht');
+    askSheet('Alle Daten löschen',
+      `${plural(db.sessions.length, 'Session', 'Sessions')}, ${plural(db.txns.length, 'Buchung', 'Buchungen')} `
+      + `und ${plural(db.players.length, 'Gegner-Profil', 'Gegner-Profile')} werden gelöscht. `
+      + 'Das lässt sich nicht rückgängig machen — zieh vorher ein Backup.',
+      'Alles löschen', () => {
+        db.sessions = []; db.txns = []; db.live = null; db.players = []; db.setup = false;
+        save(); closeSheet(); render(); toast('Alle Daten gelöscht');
+      }, openSettings, true);
   };
 }
 
 function exportBackup() {
+  // Vor dem Serialisieren setzen, damit der Stand auch im Backup selbst steht.
+  db.lastBackup = new Date().toISOString();
+  db.lastBackupCount = db.sessions.length + db.txns.length;
+  db.snoozeBackup = 0;
+  save();
   const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `pokertracker-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  renderBackupHint();
   toast('Backup heruntergeladen');
 }
 
@@ -695,10 +1229,16 @@ function importBackup(file) {
     try {
       const d = JSON.parse(r.result);
       if (!Array.isArray(d.sessions)) throw new Error('Kein gültiges Backup');
-      if (!confirm(`Backup mit ${d.sessions.length} Sessions laden? Die aktuellen Daten werden ersetzt.`)) return;
-      db = Object.assign({ v: 1, sessions: [], txns: [], live: null, tags: db.tags }, d);
-      save(); closeSheet(); render(); toast('Backup geladen');
-    } catch (e) { alert('Import fehlgeschlagen: ' + e.message); }
+      askSheet('Backup laden',
+        `Das Backup enthält ${plural(d.sessions.length, 'Session', 'Sessions')} und `
+        + `${plural((d.players || []).length, 'Gegner-Profil', 'Gegner-Profile')}. `
+        + `Deine jetzigen Daten (${plural(db.sessions.length, 'Session', 'Sessions')}) werden dabei ersetzt.`,
+        'Laden', () => {
+          db = Object.assign(blank(), { tags: db.tags, playerTags: db.playerTags }, d);
+          applyTheme(db.theme);
+          save(); closeSheet(); render(); toast('Backup geladen');
+        }, openSettings);
+    } catch (e) { infoSheet('Import fehlgeschlagen', e.message, openSettings); }
   };
   r.readAsText(file);
 }
@@ -871,9 +1411,15 @@ function readCsv(file) {
   const r = new FileReader();
   r.onload = () => {
     let rows;
-    try { rows = parseCsv(r.result); } catch (e) { alert('CSV nicht lesbar: ' + e.message); return; }
+    try { rows = parseCsv(r.result); }
+    catch (e) { infoSheet('CSV nicht lesbar', e.message, openSettings); return; }
     const valid = rows.filter((x) => x.start && !isNaN(new Date(x.start)));
-    if (!valid.length) { alert('Keine Zeilen mit gültiger Spalte "start" gefunden.'); return; }
+    if (!valid.length) {
+      infoSheet('Keine Sessions gefunden',
+        'In der Datei steht keine Zeile mit einer brauchbaren Spalte „start“. Erwartet werden die Spalten start;end;breakMinutes;location;currency;expenses;profit.',
+        openSettings);
+      return;
+    }
 
     const sum = valid.reduce((a, x) => a + num(x.profit) - num(x.expenses), 0);
 
@@ -1102,8 +1648,10 @@ function wire() {
     const n = e.target.closest('[data-nav]'); if (n) { nav(n.dataset.nav); return; }
     const r = e.target.closest('[data-sid]'); if (r) { editSession(r.dataset.sid); return; }
     const b = e.target.closest('[data-roll]'); if (b) { openBankroll(b.dataset.roll); return; }
+    const p = e.target.closest('[data-player]'); if (p) { openPlayer(p.dataset.player); return; }
   });
   $('#btnNew').onclick = () => (db.live ? openLive() : newSession());
+  $('#btnNewPlayer').onclick = newPlayerSheet;
   $('#btnSettings').onclick = openSettings;
   $('#liveOpen').onclick = openLive;
   $('#sheetCancel').onclick = closeSheet;
@@ -1118,16 +1666,19 @@ function wire() {
   seg('#chartSeg', (k) => { chartKey = k; drawChart(); });
   seg('#filterSeg', (k) => { filterKey = k; renderSessions(); });
   seg('#statSeg', (k) => { statKey = k; renderStats(); });
+  seg('#playerSeg', (k) => { playerSort = k; renderPlayers(); });
 
   wireEV();
 }
 
 /* ── Start ──────────────────────────────────────────────────── */
 load();
+applyTheme(db.theme);
 wire();
 renderSlots();
 nav('home');
 if (db.live) openLive();
+else if (!db.setup && !db.sessions.length && !db.txns.length) openStartBankroll(true);
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 wireUpdates();
