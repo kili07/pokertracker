@@ -6,7 +6,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -27,7 +27,11 @@ const TYPES = {
 };
 const TYPE_KEYS = ['cash', 'mtt', 'casino'];
 
-/* Spielertypen für die Gegner-Einschätzung. */
+/* Spielertypen für die Gegner-Einschätzung. Die Namen hier sind nur die
+   Voreinstellung — wer lieber eigene Begriffe benutzt, überschreibt sie in den
+   Einstellungen, der Wert landet dann in db.styleNames. Die Schlüssel
+   ('fish', 'nit', …) bleiben davon unberührt, sonst würden die Gegner-Profile
+   ihre Zuordnung verlieren. */
 const P_STYLES = {
   unknown: { label: 'Unbekannt', em: '❔' },
   fish:    { label: 'Fisch',     em: '🐟' },
@@ -38,11 +42,16 @@ const P_STYLES = {
 };
 const P_STYLE_KEYS = Object.keys(P_STYLES);
 
+/* Gängige Cash-Stakes als Vorschlagsliste. Eigene Werte sind über „＋ Andere
+   Stakes" trotzdem möglich und wandern danach mit in die Auswahl. */
+const STAKES_PRESETS = ['0,05/0,10', '0,10/0,25', '0,25/0,50', '0,50/1',
+  '1/2', '1/3', '2/5', '5/10', '10/25', '25/50'];
+
 /* ── Persistenz ─────────────────────────────────────────────── */
 /** Frische Grundstruktur. Wird beim Laden und beim Backup-Import als Basis
     benutzt, damit später ergänzte Felder in alten Daten nicht fehlen. */
 const blank = () => ({
-  v: 2,
+  v: 3,
   sessions: [],   // {id,type,date,location,durationMin,…,notes,tags,playerIds}
   txns: [],       // {id,type,date,amount,note,kind?}   Ein-/Auszahlungen
   live: null,     // laufende Session
@@ -55,16 +64,80 @@ const blank = () => ({
   lastBackup: null,    // ISO-Datum des letzten Backups
   lastBackupCount: 0,  // Anzahl Einträge zu dem Zeitpunkt
   snoozeBackup: 0,     // Hinweis bis zu diesem Zeitstempel ausgeblendet
+
+  styleNames: {},      // eigene Namen der Spielertypen, z.B. {fish:'Spender'}
+  /* Orte getrennt je Bereich: im Casino spielst Du woanders als im Turnier,
+     eine gemeinsame Liste wäre in der Auswahl nur im Weg. Gefüllt wird sie
+     aus den gespeicherten Sessions plus dem, was hier von Hand dazukommt. */
+  locations: { cash: [], mtt: [], casino: [] },
+  stakesList: [],      // eigene Stakes zusätzlich zu STAKES_PRESETS
+  defaults: {          // Vorbelegung neuer Sessions
+    type: 'cash',
+    stakes: '',
+    location: { cash: '', mtt: '', casino: '' },
+  },
 });
 
 let db = blank();
+
+/** Einen fremden Datensatz (aus localStorage oder aus einem Backup) auf die
+    aktuelle Struktur bringen. Object.assign allein reicht nicht: es ersetzt
+    verschachtelte Objekte im Ganzen, ein älteres `defaults` ohne das Feld
+    `location` würde die Vorgabe also nicht ergänzen, sondern löschen.
+    Alles, was die App erwartet, wird hier nachgezogen — Daten aus dem
+    Datensatz haben dabei immer Vorrang vor der Vorgabe. */
+function normalize(src) {
+  // Zwei getrennte Aufrufe: das eine Objekt wird befüllt, das andere bleibt
+  // als unveränderte Vorgabe zum Nachschlagen stehen.
+  const base = blank();
+  const d = Object.assign(blank(), src || {});
+  delete d.meta;                                   // Kopfdaten des Backups gehören nicht in die Daten
+
+  d.sessions = Array.isArray(d.sessions) ? d.sessions : [];
+  d.txns = Array.isArray(d.txns) ? d.txns : [];
+  d.players = Array.isArray(d.players) ? d.players : [];
+  d.tags = Array.isArray(d.tags) && d.tags.length ? d.tags : base.tags;
+  d.playerTags = Array.isArray(d.playerTags) && d.playerTags.length ? d.playerTags : base.playerTags;
+  d.stakesList = Array.isArray(d.stakesList) ? d.stakesList : [];
+  d.styleNames = d.styleNames && typeof d.styleNames === 'object' ? d.styleNames : {};
+
+  // Ältere Sessions haben weder Tag- noch Gegnerliste — ohne die Arrays
+  // stolpern Filter und Auswertungen über undefined.
+  d.sessions.forEach((s) => {
+    if (!s.id) s.id = uid();
+    if (!Array.isArray(s.tags)) s.tags = [];
+    if (!Array.isArray(s.playerIds)) s.playerIds = [];
+  });
+  d.players.forEach((p) => {
+    if (!p.id) p.id = uid();
+    if (!Array.isArray(p.notes)) p.notes = [];
+    if (!Array.isArray(p.traits)) p.traits = [];
+  });
+
+  const loc = d.locations && typeof d.locations === 'object' ? d.locations : {};
+  d.locations = {};
+  TYPE_KEYS.forEach((k) => { d.locations[k] = Array.isArray(loc[k]) ? loc[k] : []; });
+
+  const def = d.defaults && typeof d.defaults === 'object' ? d.defaults : {};
+  const defLoc = def.location && typeof def.location === 'object' ? def.location : {};
+  d.defaults = {
+    type: TYPE_KEYS.includes(def.type) ? def.type : 'cash',
+    stakes: def.stakes || '',
+    location: {},
+  };
+  TYPE_KEYS.forEach((k) => { d.defaults.location[k] = defLoc[k] || ''; });
+
+  if (!THEMES[d.theme]) d.theme = 'midnight';
+  d.v = base.v;
+  return d;
+}
 
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    db = Object.assign(blank(), parsed);
+    db = normalize(parsed);
     // Daten aus einer Fassung vor den Themes: das zuletzt gesetzte Theme
     // steht dann nur im Spiegel, nicht im Datensatz.
     if (!parsed.theme) db.theme = localStorage.getItem(THEME_KEY) || db.theme;
@@ -171,7 +244,15 @@ function curve(k) {
 /* ── Gegner ─────────────────────────────────────────────────── */
 const playerById = (id) => db.players.find((p) => p.id === id);
 const sessionsWith = (pid) => db.sessions.filter((s) => (s.playerIds || []).includes(pid));
-const styleOf = (p) => P_STYLES[p && p.style] || P_STYLES.unknown;
+
+/** Angezeigter Name eines Spielertyps — eigener Name aus den Einstellungen,
+    sonst der vorgegebene. */
+const styleLabel = (k) => (db.styleNames && db.styleNames[k]) || (P_STYLES[k] || P_STYLES.unknown).label;
+/** {label, em} eines Gegners, mit dem angezeigten Namen. */
+function styleOf(p) {
+  const k = P_STYLES[p && p.style] ? p.style : 'unknown';
+  return { label: styleLabel(k), em: P_STYLES[k].em, key: k };
+}
 
 /** Legt an oder liefert den vorhandenen Spieler — Namensvergleich ohne
     Groß-/Kleinschreibung, damit "Max" und "max" nicht zweimal auftauchen. */
@@ -208,6 +289,7 @@ const TITLES = { home: 'Übersicht', sessions: 'Sessions', players: 'Gegner', st
 let view = 'home';
 
 function nav(v) {
+  if (v !== 'home') armBack();            // Zurück führt dann erst auf die Übersicht
   view = v;
   $$('.view').forEach((s) => s.classList.toggle('hidden', s.id !== 'view-' + v));
   $$('.tabbar button[data-nav]').forEach((b) => b.classList.toggle('on', b.dataset.nav === v));
@@ -432,7 +514,7 @@ function openPlayer(id) {
 
     <div class="sec-title" style="margin-top:16px">Spielertyp</div>
     <div class="tagbox" id="pl_style">${P_STYLE_KEYS.map((k) =>
-      `<button type="button" class="tag ${k === (p.style || 'unknown') ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${P_STYLES[k].label}</button>`).join('')}</div>
+      `<button type="button" class="tag ${k === (p.style || 'unknown') ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${esc(styleLabel(k))}</button>`).join('')}</div>
 
     <div class="sec-title" style="margin-top:16px">Einschätzung</div>
     <div class="scale"><span>Tight</span>
@@ -518,7 +600,7 @@ function newPlayerSheet() {
     <label>Name<input id="np_name" placeholder="z.B. Andi vom Donnerstag" autocomplete="off"></label>
     <div class="sec-title" style="margin-top:16px">Spielertyp <span class="muted">(kannst Du später ändern)</span></div>
     <div class="tagbox" id="np_style">${P_STYLE_KEYS.map((k) =>
-      `<button type="button" class="tag ${k === 'unknown' ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${P_STYLES[k].label}</button>`).join('')}</div>
+      `<button type="button" class="tag ${k === 'unknown' ? 'on' : ''}" data-st="${k}">${P_STYLES[k].em} ${esc(styleLabel(k))}</button>`).join('')}</div>
     <div class="hint" style="margin-top:14px">Einschätzung, Merkmale und Notizen ergänzt Du
       gleich danach im Profil.</div>
   `, () => {
@@ -547,15 +629,150 @@ function newPlayerSheet() {
 /* ── Statistik ──────────────────────────────────────────────── */
 let statKey = 'all';
 
+/* Zusätzliche Filter über der Bereichsauswahl. Sie greifen alle gleichzeitig,
+   lassen sich also frei kombinieren. Bewusst nur im Arbeitsspeicher: eine
+   vergessene Einstellung, die nach Tagen noch die Zahlen beschneidet, wäre
+   irreführender als der kleine Aufwand, sie neu zu setzen. */
+const RANGES = {
+  all:  { label: 'Alles',      days: 0 },
+  d30:  { label: '30 Tage',    days: 30 },
+  d90:  { label: '90 Tage',    days: 90 },
+  d365: { label: '12 Monate',  days: 365 },
+  ytd:  { label: 'Dieses Jahr', days: -1 },
+  free: { label: 'Zeitraum',   days: -2 },
+};
+const MINDUR = { 0: 'egal', 60: 'ab 1 h', 120: 'ab 2 h', 180: 'ab 3 h', 300: 'ab 5 h' };
+
+const statFilterBlank = () => ({
+  range: 'all', from: '', to: '',
+  loc: '', stakes: '', tags: [], player: '', minMin: 0,
+});
+let statF = statFilterBlank();
+
+/** Untere Grenze des gewählten Zeitraums als Zeitstempel — oder null. */
+function rangeStart() {
+  const r = RANGES[statF.range] || RANGES.all;
+  if (r.days > 0) return Date.now() - r.days * 864e5;
+  if (statF.range === 'ytd') return new Date(new Date().getFullYear(), 0, 1).getTime();
+  if (statF.range === 'free' && statF.from) return new Date(statF.from + 'T00:00').getTime();
+  return null;
+}
+function rangeEnd() {
+  // Der Endtag zählt voll mit, deshalb bis 23:59:59.
+  if (statF.range === 'free' && statF.to) return new Date(statF.to + 'T23:59:59').getTime();
+  return null;
+}
+
+/** Bereichsauswahl plus alle gesetzten Filter. */
+function statSessions() {
+  const von = rangeStart(), bis = rangeEnd();
+  return sessionsOf(statKey).filter((s) => {
+    const t = new Date(s.date).getTime();
+    if (von != null && t < von) return false;
+    if (bis != null && t > bis) return false;
+    if (statF.loc && (s.location || '') !== statF.loc) return false;
+    if (statF.stakes && (s.stakes || '') !== statF.stakes) return false;
+    if (statF.player && !(s.playerIds || []).includes(statF.player)) return false;
+    if (statF.minMin && num(s.durationMin) < statF.minMin) return false;
+    // Tags sind ein Oder: „Tilt oder Müde" ist die Frage, die man stellt.
+    if (statF.tags.length && !statF.tags.some((x) => (s.tags || []).includes(x))) return false;
+    return true;
+  });
+}
+
+const statFilterOn = () => JSON.stringify(statF) !== JSON.stringify(statFilterBlank());
+
+/** Kurzfassung der aktiven Filter für die Leiste über den Zahlen. */
+function statFilterText(n, gesamt) {
+  if (!statFilterOn()) return `alle ${plural(gesamt, 'Session', 'Sessions')}`;
+  const bits = [];
+  if (statF.range === 'free') {
+    const d = (v) => (v ? dfShort.format(new Date(v + 'T12:00')) : '…');
+    if (statF.from || statF.to) bits.push(`${d(statF.from)} – ${d(statF.to)}`);
+  } else if (statF.range !== 'all') bits.push(RANGES[statF.range].label);
+  if (statF.loc) bits.push(statF.loc);
+  if (statF.stakes) bits.push(statF.stakes);
+  if (statF.tags.length) bits.push(statF.tags.join(' / '));
+  if (statF.player) { const p = playerById(statF.player); if (p) bits.push('mit ' + p.name); }
+  if (statF.minMin) bits.push(MINDUR[statF.minMin]);
+  // „Zeitraum" ohne Von und Bis schränkt nichts ein — dann bleibt die Liste leer.
+  if (!bits.length) return `alle ${plural(gesamt, 'Session', 'Sessions')}`;
+  return `${n} von ${gesamt} Sessions · ${bits.join(' · ')}`;
+}
+
+function openStatFilter() {
+  const alleTags = [...new Set(db.sessions.flatMap((s) => s.tags || []))].sort((a, b) => a.localeCompare(b, 'de'));
+  const orte = [...new Set(sessionsOf(statKey).map((s) => s.location).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'de'));
+  const stk = [...new Set(db.sessions.filter((s) => s.type === 'cash').map((s) => s.stakes).filter(Boolean))]
+    .sort((a, b) => bbFromStakes(a) - bbFromStakes(b));
+  const gegner = [...db.players].sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const opt = (v, l, sel) => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`;
+
+  openSheet('Filter', `
+    <div class="sec-title">Zeitraum</div>
+    <div class="tagbox" id="sfRange" style="margin-bottom:12px">${Object.keys(RANGES).map((k) =>
+      `<button type="button" class="tag ${statF.range === k ? 'on' : ''}" data-r="${k}">${esc(RANGES[k].label)}</button>`).join('')}</div>
+    <div class="form-grid two ${statF.range === 'free' ? '' : 'hidden'}" id="sfFree" style="margin-bottom:16px">
+      <label>Von<input type="date" id="sfFrom" value="${esc(statF.from)}"></label>
+      <label>Bis<input type="date" id="sfTo" value="${esc(statF.to)}"></label>
+    </div>
+
+    <div class="form-grid" style="margin-bottom:16px">
+      <label>Ort<select id="sfLoc">${opt('', '— alle Orte —', statF.loc)}${orte.map((o) => opt(o, o, statF.loc)).join('')}</select></label>
+      ${stk.length ? `<label>Stakes<select id="sfStakes">${opt('', '— alle Stakes —', statF.stakes)}${stk.map((o) => opt(o, o, statF.stakes)).join('')}</select></label>` : ''}
+      ${gegner.length ? `<label>Gegner am Tisch<select id="sfPlayer">${opt('', '— egal —', statF.player)}${gegner.map((p) => opt(p.id, p.name, statF.player)).join('')}</select></label>` : ''}
+      <label>Mindestdauer<select id="sfMin">${Object.keys(MINDUR).map((m) =>
+        `<option value="${m}"${+m === statF.minMin ? ' selected' : ''}>${esc(MINDUR[m])}</option>`).join('')}</select></label>
+    </div>
+
+    ${alleTags.length ? `<div class="sec-title">Tags <span class="muted">(eines davon reicht)</span></div>
+    <div class="tagbox" id="sfTags" style="margin-bottom:16px">${alleTags.map((t) =>
+      `<button type="button" class="tag ${statF.tags.includes(t) ? 'on' : ''}" data-tag="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
+
+    <button class="btn btn-block" id="sfReset">Alle Filter zurücksetzen</button>
+  `, () => {
+    const g = (id) => { const el = $(id); return el ? el.value : ''; };
+    statF.from = g('#sfFrom'); statF.to = g('#sfTo');
+    statF.loc = g('#sfLoc'); statF.stakes = g('#sfStakes');
+    statF.player = g('#sfPlayer'); statF.minMin = num(g('#sfMin'));
+    statF.tags = $$('#sfTags .tag.on').map((b) => b.dataset.tag);
+    closeSheet(); renderStats();
+  }, 'Anwenden');
+
+  $('#sfRange').onclick = (e) => {
+    const b = e.target.closest('[data-r]'); if (!b) return;
+    statF.range = b.dataset.r;
+    $$('#sfRange .tag').forEach((x) => x.classList.toggle('on', x === b));
+    $('#sfFree').classList.toggle('hidden', statF.range !== 'free');
+  };
+  const tb = $('#sfTags');
+  if (tb) tb.onclick = (e) => {
+    const b = e.target.closest('[data-tag]'); if (!b) return;
+    b.classList.toggle('on');
+  };
+  $('#sfReset').onclick = () => { statF = statFilterBlank(); closeSheet(); renderStats(); toast('Filter zurückgesetzt'); };
+}
+
 function statCard(k, v, n, klass) {
   return `<div class="stat"><div class="stat-k">${k}</div>
     <div class="stat-v ${klass || ''}">${v}</div>${n ? `<div class="stat-n">${n}</div>` : ''}</div>`;
 }
 
 function renderStats() {
-  const list = sessionsOf(statKey);
+  const alle = sessionsOf(statKey);
+  const list = statSessions();
   const body = $('#statBody');
-  if (!list.length) { body.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>'; return; }
+
+  $('#statFilterInfo').textContent = statFilterText(list.length, alle.length);
+  $('#statFilterClear').classList.toggle('hidden', !statFilterOn());
+
+  if (!list.length) {
+    body.innerHTML = statFilterOn()
+      ? '<div class="empty">Keine Session passt zu diesen Filtern.</div>'
+      : '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
+    return;
+  }
 
   const p = list.reduce((a, s) => a + profit(s), 0);
   const h = list.reduce((a, s) => a + hours(s), 0);
@@ -591,21 +808,41 @@ function renderStats() {
     + breakdown('Nach Ort', list, (s) => s.location || 'Ohne Ort')
     + (statKey === 'cash' ? breakdown('Nach Stakes', list, (s) => s.stakes || 'Ohne Angabe') : '')
     + (statKey === 'all' ? breakdown('Nach Bereich', list, (s) => TYPES[s.type].label) : '')
-    + breakdown('Nach Tag', list, null, true);
+    + breakdown('Nach Tag', list, null, true)
+    + breakdown('Nach Wochentag', list, (s) => WOCHENTAGE[new Date(s.date).getDay()], false, 'fest')
+    + breakdown('Nach Monat', list, (s) => dfMonth.format(new Date(s.date)), false, 'zeit')
+    + breakdown('Nach Tageszeit', list, (s) => tageszeit(new Date(s.date).getHours()), false, 'fest')
+    + breakdownPlayers(list);
 }
 
-function breakdown(title, list, keyFn, byTag) {
+const WOCHENTAGE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+const dfMonth = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
+
+function tageszeit(h) {
+  if (h < 6) return 'Nachts (0–6 Uhr)';
+  if (h < 12) return 'Vormittags (6–12 Uhr)';
+  if (h < 18) return 'Nachmittags (12–18 Uhr)';
+  return 'Abends (18–24 Uhr)';
+}
+
+/** `sort`: 'gewinn' (Vorgabe) sortiert nach Ergebnis, 'fest' hält die
+    natürliche Reihenfolge der Schlüssel, 'zeit' sortiert chronologisch. */
+function breakdown(title, list, keyFn, byTag, sort) {
   const map = new Map();
   const add = (k, s) => {
-    if (!map.has(k)) map.set(k, { n: 0, p: 0, h: 0 });
+    if (!map.has(k)) map.set(k, { n: 0, p: 0, h: 0, t: new Date(s.date).getTime() });
     const e = map.get(k); e.n++; e.p += profit(s); e.h += hours(s);
+    e.t = Math.min(e.t, new Date(s.date).getTime());
   };
   for (const s of list) {
     if (byTag) (s.tags || []).forEach((t) => add(t, s));
     else add(keyFn(s), s);
   }
   if (!map.size) return '';
-  const rows = [...map.entries()].sort((a, b) => b[1].p - a[1].p).map(([k, e]) =>
+  const entries = [...map.entries()];
+  if (sort === 'zeit') entries.sort((a, b) => b[1].t - a[1].t);
+  else if (sort !== 'fest') entries.sort((a, b) => b[1].p - a[1].p);
+  const rows = entries.map(([k, e]) =>
     `<div class="bd-row"><span>${esc(k)}</span>
       <span class="c">${e.n}× · ${nfa.format(e.h)} h</span>
       <span class="v ${cls(e.p)}">${signed(e.p)}</span></div>`).join('');
@@ -613,10 +850,34 @@ function breakdown(title, list, keyFn, byTag) {
     <div class="card-head"><h2>${title}</h2></div><div class="bd">${rows}</div></div>`;
 }
 
+/** Wie Du abschneidest, wenn ein bestimmter Gegner am Tisch sitzt. Eine
+    Session zählt bei jedem ihrer Gegner mit — die Summen sind deshalb
+    absichtlich nicht additiv. */
+function breakdownPlayers(list) {
+  const map = new Map();
+  for (const s of list) {
+    for (const pid of s.playerIds || []) {
+      const p = playerById(pid); if (!p) continue;
+      if (!map.has(pid)) map.set(pid, { name: p.name, em: styleOf(p).em, n: 0, p: 0, h: 0 });
+      const e = map.get(pid); e.n++; e.p += profit(s); e.h += hours(s);
+    }
+  }
+  if (!map.size) return '';
+  const rows = [...map.values()].sort((a, b) => b.p - a.p).map((e) =>
+    `<div class="bd-row"><span>${e.em} ${esc(e.name)}</span>
+      <span class="c">${e.n}× · ${nfa.format(e.h)} h</span>
+      <span class="v ${cls(e.p)}">${signed(e.p)}</span></div>`).join('');
+  return `<div class="card" style="margin-top:14px">
+    <div class="card-head"><h2>Mit welchem Gegner</h2></div><div class="bd">${rows}</div>
+    <div class="hint" style="margin:10px 2px 0">Dein Ergebnis in den Sessions, in denen
+      er am Tisch saß. Sessions mit mehreren Gegnern zählen bei jedem mit.</div></div>`;
+}
+
 /* ── Sheet-System ───────────────────────────────────────────── */
 let sheetSaveFn = null;
 
 function openSheet(title, html, saveFn, saveLabel) {
+  armBack();                              // Zurück soll das Sheet schließen, nicht die App
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = html;
   $('#sheetBody').onclick = null;         // Handler des vorherigen Sheets verwerfen
@@ -694,13 +955,81 @@ function askPlayerNote(pid, back) {
   $('#dlg_note').focus();
 }
 
+/* ── Auswahlfelder mit freier Eingabe ───────────────────────────
+   Ein <select> mit den bekannten Werten plus dem Eintrag „＋ …", der ein
+   Textfeld darunter aufklappt. So ist die Auswahl auf dem Handy zwei Tipper
+   weit weg, ohne dass etwas Neues unmöglich wird.
+   Gelesen wird beides zusammen über readPick(id). */
+
+/** Bisher benutzte Orte eines Bereichs: aus den Sessions und aus der von Hand
+    gepflegten Liste. Getrennt je Bereich — siehe db.locations. */
+function knownLocations(type) {
+  const fromSessions = db.sessions.filter((s) => s.type === type).map((s) => s.location);
+  return [...new Set([...(db.locations[type] || []), ...fromSessions].filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'de'));
+}
+
+/** Bekannte Stakes: die gängigen Vorgaben, die selbst ergänzten und alles,
+    was schon in einer Cash-Session steht. Sortiert nach Big Blind. */
+function knownStakes() {
+  const fromSessions = db.sessions.filter((s) => s.type === 'cash').map((s) => s.stakes);
+  return [...new Set([...STAKES_PRESETS, ...db.stakesList, ...fromSessions].filter(Boolean))]
+    .sort((a, b) => bbFromStakes(a) - bbFromStakes(b));
+}
+
+/** `id` ist die Basis: das <select> heißt `<id>_sel`, das Textfeld `<id>`.
+    Ein Wert, der nicht in der Liste steht (alter Freitext), wird vorne
+    ergänzt, damit er beim Bearbeiten nicht stillschweigend verschwindet. */
+function pickField(id, label, options, value, newLabel, emptyLabel) {
+  const known = [...options];
+  if (value && !known.includes(value)) known.unshift(value);
+  return `<label>${label}
+      <select id="${id}_sel">
+        <option value="">${esc(emptyLabel || '— keine Angabe —')}</option>
+        ${known.map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+        <option value="__new">＋ ${esc(newLabel)}</option>
+      </select>
+    </label>
+    <input id="${id}" class="pick-new hidden" placeholder="${esc(newLabel)}" autocomplete="off" value="">`;
+}
+
+/** Klappt das Textfeld auf, sobald „＋ …" gewählt ist. */
+function wirePick(id) {
+  const sel = $('#' + id + '_sel'), inp = $('#' + id);
+  if (!sel || !inp) return;
+  sel.onchange = () => {
+    const neu = sel.value === '__new';
+    inp.classList.toggle('hidden', !neu);
+    if (neu) inp.focus();
+  };
+}
+
+function readPick(id) {
+  const sel = $('#' + id + '_sel'), inp = $('#' + id);
+  if (!sel) return inp ? inp.value.trim() : '';
+  return sel.value === '__new' ? (inp ? inp.value.trim() : '') : sel.value;
+}
+
+/** Einen frisch eingetippten Ort in die Liste des Bereichs übernehmen, damit
+    er beim nächsten Mal in der Auswahl steht — auch wenn die Session selbst
+    später wieder gelöscht wird. */
+function rememberLocation(type, loc) {
+  if (!loc || !TYPE_KEYS.includes(type)) return;
+  if (!db.locations[type].includes(loc)) db.locations[type].push(loc);
+}
+function rememberStakes(st) {
+  if (!st) return;
+  if (!STAKES_PRESETS.includes(st) && !db.stakesList.includes(st)) db.stakesList.push(st);
+}
+
 /* ── Neue / bestehende Session ──────────────────────────────── */
 function fieldsFor(type, s) {
   s = s || {};
   const v = (k, d) => (s[k] != null && s[k] !== '' ? esc(s[k]) : (d == null ? '' : d));
   if (type === 'cash') return `
-    <div class="form-grid two">
-      <label>Stakes<input id="f_stakes" placeholder="1/2" value="${v('stakes')}"></label>
+    ${pickField('f_stakes', 'Stakes', knownStakes(),
+      s.stakes != null ? s.stakes : db.defaults.stakes, 'Andere Stakes')}
+    <div class="form-grid two" style="margin-top:12px">
       <label>Spieler am Tisch<input id="f_players" type="number" inputmode="numeric" placeholder="9" value="${v('players')}"></label>
       <label>Buy-in gesamt (€)<input id="f_buyin" type="number" inputmode="decimal" step="any" placeholder="200" value="${v('buyin')}"></label>
       <label>Cash-out (€)<input id="f_cashout" type="number" inputmode="decimal" step="any" placeholder="340" value="${v('cashout')}"></label>
@@ -748,6 +1077,14 @@ function playersHTML(sel) {
     </div>`;
 }
 
+/** Das Ort-Feld hängt am Bereich — wird beim Umschalten der Spielart neu
+    gezeichnet, damit im Turnier nicht die Cash-Orte stehen. */
+function locationField(type, s) {
+  s = s || {};
+  const val = s.location != null ? s.location : (db.defaults.location[type] || '');
+  return pickField('f_location', 'Ort', knownLocations(type), val, 'Neuer Ort');
+}
+
 /** mode: 'new' (Typwahl + Live-Start) | 'edit' (Löschen)
           | 'finish' (Live-Abschluss) | 'live' (Details der laufenden Session) */
 function sessionForm(type, s, mode) {
@@ -761,9 +1098,7 @@ function sessionForm(type, s, mode) {
          <span class="em">${TYPES[k].em}</span>${TYPES[k].label}</button>`).join('')}</div>` : ''}
     <div class="form-grid">
       <label>${live ? 'Beginn' : 'Datum &amp; Uhrzeit'}<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
-      <label>Ort<input id="f_location" list="locs" placeholder="z.B. Casino Wien" value="${esc(s.location || '')}"></label>
-      <datalist id="locs">${[...new Set(db.sessions.map((x) => x.location).filter(Boolean))]
-        .map((l) => `<option value="${esc(l)}">`).join('')}</datalist>
+      <div id="locField">${locationField(type, s)}</div>
       ${live ? '<div class="hint">Die Dauer kommt von der laufenden Uhr und läuft weiter.</div>' : `
       <div class="form-grid two">
         <label>Dauer — Stunden<input id="f_h" type="number" inputmode="numeric" placeholder="0" value="${dm ? Math.floor(dm / 60) : ''}"></label>
@@ -784,12 +1119,21 @@ function sessionForm(type, s, mode) {
 let formType = 'cash';
 
 function wireForm(existing) {
+  wirePick('f_location');
+  wirePick('f_stakes');
+
   const pick = $('#typePick');
   if (pick) pick.onclick = (e) => {
     const b = e.target.closest('[data-type]'); if (!b) return;
     formType = b.dataset.type;
     $$('#typePick button').forEach((x) => x.classList.toggle('on', x === b));
+    // Ort und Stakes gehören zum Bereich und müssen mitwechseln — sonst
+    // stünden im Turnier die Cash-Orte und ein Stakes-Feld, das es dort
+    // gar nicht gibt.
+    $('#locField').innerHTML = locationField(formType, null);
     $('#typeFields').innerHTML = fieldsFor(formType);
+    wirePick('f_location');
+    wirePick('f_stakes');
     const live = $('#btnStartLive');
     if (live) live.classList.toggle('hidden', formType === 'casino');
   };
@@ -839,7 +1183,8 @@ function readForm(type, base) {
   const s = Object.assign({ id: uid(), type }, base || {});
   s.type = type;
   s.date = new Date(g('f_date') || Date.now()).toISOString();
-  s.location = g('f_location').trim();
+  s.location = readPick('f_location');
+  rememberLocation(type, s.location);
   // Bei der laufenden Session gibt es keine Dauer-Felder — dann bleibt der
   // Wert aus `base` stehen, die Uhr ist die Quelle.
   if ($('#f_h') || $('#f_m')) s.durationMin = num(g('f_h')) * 60 + num(g('f_m'));
@@ -848,7 +1193,8 @@ function readForm(type, base) {
   if ($('#f_opp')) s.playerIds = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
 
   if (type === 'cash') {
-    s.stakes = g('f_stakes').trim();
+    s.stakes = readPick('f_stakes');
+    rememberStakes(s.stakes);
     s.bb = bbFromStakes(s.stakes);
     s.players = num(g('f_players'));
     s.buyin = num(g('f_buyin'));
@@ -875,7 +1221,7 @@ function bbFromStakes(str) {
 }
 
 function newSession() {
-  formType = 'cash';
+  formType = db.defaults.type;
   openSheet('Neue Session', sessionForm(formType, null, 'new'), () => {
     const s = readForm(formType);
     db.sessions.push(s); save(); closeSheet(); render();
@@ -1133,6 +1479,28 @@ function openSettings() {
         </button>`).join('')}
     </div>
     <div class="divider" style="margin:18px 0"></div>
+    <div class="sec-title">Standard für neue Sessions</div>
+    <p class="hint" style="margin:8px 0 12px">Womit „Neue Session“ vorbelegt ist. Ändern
+      kannst Du es dort natürlich weiterhin bei jeder Session.</p>
+    <div class="form-grid" style="margin-bottom:18px">
+      <label>Bereich
+        <select id="setDefType">${TYPE_KEYS.map((k) =>
+          `<option value="${k}"${db.defaults.type === k ? ' selected' : ''}>${TYPES[k].em} ${esc(TYPES[k].label)}</option>`).join('')}</select>
+      </label>
+      ${pickField('setDefStakes', 'Stakes (Cash Game)', knownStakes(), db.defaults.stakes, 'Andere Stakes')}
+      ${TYPE_KEYS.map((k) => pickField('setDefLoc_' + k, 'Ort — ' + TYPES[k].label,
+        knownLocations(k), db.defaults.location[k], 'Neuer Ort')).join('')}
+    </div>
+    <div class="divider" style="margin:18px 0"></div>
+    <div class="sec-title">Spielertypen</div>
+    <p class="hint" style="margin:8px 0 12px">Benenne die Typen so, wie Du sie im Kopf hast.
+      Bereits vergebene Einschätzungen bleiben dabei erhalten.</p>
+    <div class="form-grid" style="margin-bottom:10px">
+      ${P_STYLE_KEYS.map((k) => `<label>${P_STYLES[k].em} <span class="muted">(${esc(P_STYLES[k].label)})</span>
+        <input id="setStyle_${k}" value="${esc(styleLabel(k))}" placeholder="${esc(P_STYLES[k].label)}" autocomplete="off"></label>`).join('')}
+    </div>
+    <button class="btn btn-block" id="btnStyleReset" style="margin-bottom:18px">Namen zurücksetzen</button>
+    <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Bankroll</div>
     <p class="hint" style="margin:8px 0 12px">Anfangsstand je Bereich — der Betrag, den Du
       hattest, bevor Du hier angefangen hast zu tracken.</p>
@@ -1140,7 +1508,10 @@ function openSettings() {
     <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Datensicherung</div>
     <p class="hint" style="margin:8px 0 12px">Deine Daten liegen nur in diesem Browser.
-      Lade regelmäßig ein Backup herunter — z.B. in Google Drive.</p>
+      Lade regelmäßig ein Backup herunter — z.B. in Google Drive. Die Datei enthält
+      <b>alles</b>: Sessions, Buchungen, Gegner samt Notizen, Tags, Merkmale, Orte,
+      Stakes, Spielertyp-Namen, Standardwerte, Theme und eine laufende Session.
+      Nach dem Löschen der Browserdaten bekommst Du damit den vollen Stand zurück.</p>
     <div class="btn-row" style="margin-bottom:8px">
       <button class="btn" id="btnExport">Backup speichern</button>
       <button class="btn" id="btnImport">Backup laden</button>
@@ -1175,8 +1546,33 @@ function openSettings() {
     const split = (id) => $(id).value.split(',').map((t) => t.trim()).filter(Boolean);
     db.tags = split('#setTags');
     db.playerTags = split('#setPlayerTags');
-    save(); closeSheet(); toast('Gespeichert');
+
+    db.defaults.type = $('#setDefType').value;
+    db.defaults.stakes = readPick('setDefStakes');
+    rememberStakes(db.defaults.stakes);
+    TYPE_KEYS.forEach((k) => {
+      const loc = readPick('setDefLoc_' + k);
+      db.defaults.location[k] = loc;
+      rememberLocation(k, loc);
+    });
+
+    // Leeres Feld heißt „wieder den vorgegebenen Namen benutzen" — dann gar
+    // nichts speichern, sonst stünde später ein leerer Knopf im Profil.
+    db.styleNames = {};
+    P_STYLE_KEYS.forEach((k) => {
+      const v = $('#setStyle_' + k).value.trim();
+      if (v && v !== P_STYLES[k].label) db.styleNames[k] = v;
+    });
+
+    save(); closeSheet(); render(); toast('Gespeichert');
   });
+
+  TYPE_KEYS.forEach((k) => wirePick('setDefLoc_' + k));
+  wirePick('setDefStakes');
+  $('#btnStyleReset').onclick = () => {
+    P_STYLE_KEYS.forEach((k) => { $('#setStyle_' + k).value = P_STYLES[k].label; });
+    toast('Namen zurückgesetzt — noch sichern');
+  };
 
   /* Theme sofort anwenden statt erst beim Sichern — der Sinn der Auswahl ist ja,
      das Ergebnis zu sehen. Das Sheet bleibt dabei offen. */
@@ -1201,9 +1597,30 @@ function openSettings() {
       + 'Das lässt sich nicht rückgängig machen — zieh vorher ein Backup.',
       'Alles löschen', () => {
         db.sessions = []; db.txns = []; db.live = null; db.players = []; db.setup = false;
+        // Die gesammelten Orte und Stakes stammen aus genau diesen Sessions —
+        // sie stehen zu lassen wäre kein „alles gelöscht". Die Vorbelegung
+        // zeigt dann auf etwas, das es nicht mehr gibt, und muss mit weg.
+        db.locations = { cash: [], mtt: [], casino: [] };
+        db.stakesList = [];
+        db.defaults.stakes = '';
+        db.defaults.location = { cash: '', mtt: '', casino: '' };
         save(); closeSheet(); render(); toast('Alle Daten gelöscht');
       }, openSettings, true);
   };
+}
+
+/** Was alles in einem Datensatz steckt — für die Bestätigung beim Import und
+    die Rückmeldung beim Export. */
+function contentSummary(d) {
+  const notes = (d.players || []).reduce((a, p) => a + (p.notes || []).length, 0);
+  const bits = [
+    plural((d.sessions || []).length, 'Session', 'Sessions'),
+    plural((d.txns || []).length, 'Buchung', 'Buchungen'),
+    plural((d.players || []).length, 'Gegner', 'Gegner'),
+  ];
+  if (notes) bits.push(plural(notes, 'Notiz', 'Notizen'));
+  if (d.live) bits.push('eine laufende Session');
+  return bits.join(', ');
 }
 
 function exportBackup() {
@@ -1212,14 +1629,28 @@ function exportBackup() {
   db.lastBackupCount = db.sessions.length + db.txns.length;
   db.snoozeBackup = 0;
   save();
-  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  /* Der gesamte Datensatz wandert unverändert in die Datei — Sessions,
+     Buchungen, Gegner mit Notizen, Tags, Merkmale, Orte, Stakes,
+     Spielertyp-Namen, Standardwerte, Theme und eine laufende Session.
+     `meta` steht nur als Kopfzeile davor und wird beim Import wieder
+     entfernt (siehe normalize), damit es nicht in die Daten wandert. */
+  const payload = Object.assign({
+    meta: {
+      app: 'Pokertracker',
+      appVersion: APP_VERSION,
+      format: db.v,
+      exported: db.lastBackup,
+      contains: contentSummary(db),
+    },
+  }, db);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `pokertracker-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   renderBackupHint();
-  toast('Backup heruntergeladen');
+  toast('Backup mit ' + contentSummary(db));
 }
 
 function importBackup(file) {
@@ -1228,13 +1659,16 @@ function importBackup(file) {
   r.onload = () => {
     try {
       const d = JSON.parse(r.result);
-      if (!Array.isArray(d.sessions)) throw new Error('Kein gültiges Backup');
+      if (!d || !Array.isArray(d.sessions)) throw new Error('Die Datei ist kein Pokertracker-Backup.');
+      const stand = d.meta && d.meta.exported ? ` vom ${dfLong.format(new Date(d.meta.exported))}` : '';
       askSheet('Backup laden',
-        `Das Backup enthält ${plural(d.sessions.length, 'Session', 'Sessions')} und `
-        + `${plural((d.players || []).length, 'Gegner-Profil', 'Gegner-Profile')}. `
-        + `Deine jetzigen Daten (${plural(db.sessions.length, 'Session', 'Sessions')}) werden dabei ersetzt.`,
+        `Das Backup${stand} enthält ${contentSummary(d)} — dazu Tags, Merkmale, Orte, `
+        + 'Stakes, Spielertyp-Namen, Standardwerte und das Theme. Alles davon wird '
+        + `wiederhergestellt. Deine jetzigen Daten (${contentSummary(db)}) werden dabei ersetzt.`,
         'Laden', () => {
-          db = Object.assign(blank(), { tags: db.tags, playerTags: db.playerTags }, d);
+          // normalize() ergänzt, was in einem älteren Backup noch fehlt, und
+          // wirft die Kopfzeile `meta` weg.
+          db = normalize(d);
           applyTheme(db.theme);
           save(); closeSheet(); render(); toast('Backup geladen');
         }, openSettings);
@@ -1398,8 +1832,9 @@ function csvToSession(r, type) {
   const s = {
     id: uid(), type, date: start.toISOString(),
     location: r.location || '', durationMin: dur,
-    notes: '', tags: ['Import'],
+    notes: '', tags: ['Import'], playerIds: [],
   };
+  rememberLocation(type, s.location);   // taucht danach in der Ort-Auswahl auf
   if (type === 'casino') { s.result = p; s.game = ''; }
   else if (type === 'mtt') { s.buyin = 0; s.fee = 0; s.entries = 1; s.prize = p; }
   else { s.stakes = ''; s.bb = 0; s.players = 0; s.buyin = 0; s.cashout = p; }
@@ -1538,6 +1973,7 @@ function contiguousBoard() {
 }
 
 function openCardPicker(slot) {
+  armBack();                              // Zurück schließt den Wähler
   ev.slot = slot;
   $('#cpTitle').textContent = 'Karte wählen';
   const used = new Set(Object.entries(ev.cards).filter(([k]) => k !== slot).map(([, c]) => c));
@@ -1642,6 +2078,48 @@ function wireEV() {
   $('#poPot').oninput = po; $('#poBet').oninput = po;
 }
 
+/* ── Zurück-Taste ───────────────────────────────────────────────
+   Ohne Zutun beendet ein einziger Druck auf Zurück die installierte App —
+   viel zu leicht aus Versehen. Deshalb liegt ein zusätzlicher Verlaufseintrag
+   („Wächter") über der App: Zurück landet dann bei uns statt beim System.
+
+   Der Druck schließt der Reihe nach, was offen ist — Kartenwähler, Sheet,
+   Unterseite — und baut den Wächter danach wieder auf. Steht nichts mehr offen
+   und Du bist auf der Übersicht, kommt erst ein Hinweis; der Wächter bleibt
+   dann für zwei Sekunden unten, sodass ein zweiter Druck in dieser Zeit
+   wirklich hinausführt. Verstreicht die Zeit, wird er wieder aufgebaut. */
+let guardUp = false;
+let guardTimer = null;
+
+function pushGuard() {
+  if (guardUp) return;
+  guardUp = true;
+  try { history.pushState({ pt: 'guard' }, ''); } catch (e) { guardUp = false; }
+}
+
+/** Vor allem, was die Zurück-Taste abfangen soll: Sheet öffnen, Seite wechseln. */
+function armBack() {
+  clearTimeout(guardTimer);
+  pushGuard();
+}
+
+function wireBack() {
+  pushGuard();
+  window.addEventListener('popstate', () => {
+    guardUp = false;
+
+    if (!$('#cardPicker').classList.contains('hidden')) { closeCardPicker(); pushGuard(); return; }
+    // Über den Abbrechen-Knopf, nicht über closeSheet: verschachtelte Sheets
+    // haben dort ihren Rückweg zum vorherigen Sheet hinterlegt.
+    if (!$('#sheet').classList.contains('hidden')) { $('#sheetCancel').click(); pushGuard(); return; }
+    if (view !== 'home') { nav('home'); pushGuard(); return; }
+
+    toast('Nochmal zurück zum Beenden');
+    clearTimeout(guardTimer);
+    guardTimer = setTimeout(pushGuard, 2000);
+  });
+}
+
 /* ── Verdrahtung ────────────────────────────────────────────── */
 function wire() {
   document.body.addEventListener('click', (e) => {
@@ -1665,7 +2143,11 @@ function wire() {
   });
   seg('#chartSeg', (k) => { chartKey = k; drawChart(); });
   seg('#filterSeg', (k) => { filterKey = k; renderSessions(); });
-  seg('#statSeg', (k) => { statKey = k; renderStats(); });
+  // Ort und Stakes gehören zum Bereich — beim Wechsel würden sie sonst
+  // weiterfiltern und die neue Auswahl leer aussehen lassen.
+  seg('#statSeg', (k) => { statKey = k; statF.loc = ''; statF.stakes = ''; renderStats(); });
+  $('#statFilterBtn').onclick = openStatFilter;
+  $('#statFilterClear').onclick = () => { statF = statFilterBlank(); renderStats(); toast('Filter zurückgesetzt'); };
   seg('#playerSeg', (k) => { playerSort = k; renderPlayers(); });
 
   wireEV();
@@ -1675,6 +2157,7 @@ function wire() {
 load();
 applyTheme(db.theme);
 wire();
+wireBack();
 renderSlots();
 nav('home');
 if (db.live) openLive();

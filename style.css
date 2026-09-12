@@ -525,6 +525,18 @@ fieldset{border:0;padding:0;margin:0}
 .typepick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
 .typepick .em{font-size:22px}
 
+/* Eingabefeld, das unter einem Auswahlfeld aufklappt („＋ Neuer Ort") —
+   rückt leicht ein, damit es sichtbar zu der Auswahl darüber gehört. */
+.pick-new{margin-top:6px;border-color:var(--accent-line)}
+
+/* Filterleiste über den Auswertungen */
+.filterbar{display:flex;align-items:center;gap:10px;margin:10px 0 2px}
+.filterbar .btn{flex:none}
+.filterbar-info{
+  flex:1;min-width:0;font-size:11.5px;color:var(--muted);line-height:1.35;font-weight:550;
+}
+.filterbar .link{flex:none;font-size:12px}
+
 .tagbox{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
 .tag{
   background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-pill);
