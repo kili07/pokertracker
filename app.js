@@ -6,7 +6,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -2085,11 +2085,10 @@ function wireEV() {
 
    Der Druck schließt der Reihe nach, was offen ist — Kartenwähler, Sheet,
    Unterseite — und baut den Wächter danach wieder auf. Steht nichts mehr offen
-   und Du bist auf der Übersicht, kommt erst ein Hinweis; der Wächter bleibt
-   dann für zwei Sekunden unten, sodass ein zweiter Druck in dieser Zeit
-   wirklich hinausführt. Verstreicht die Zeit, wird er wieder aufgebaut. */
+   und Du bist auf der Übersicht, fragt ein Dialog nach, ob die App wirklich
+   beendet werden soll. */
 let guardUp = false;
-let guardTimer = null;
+let leaving = false;
 
 function pushGuard() {
   if (guardUp) return;
@@ -2099,8 +2098,17 @@ function pushGuard() {
 
 /** Vor allem, was die Zurück-Taste abfangen soll: Sheet öffnen, Seite wechseln. */
 function armBack() {
-  clearTimeout(guardTimer);
   pushGuard();
+}
+
+/** „Verlassen" im Abschiedsdialog: der Dialog hat selbst einen Wächter
+    aufgebaut (jedes Sheet tut das). Erst ihn abräumen, dann führt der zweite
+    Schritt aus der App. Beides muss über zwei Runden laufen — `history.back()`
+    zweimal hintereinander fasst der Browser zu einem Schritt zusammen. */
+function leaveApp() {
+  closeSheet();
+  leaving = true;
+  history.back();
 }
 
 function wireBack() {
@@ -2108,15 +2116,27 @@ function wireBack() {
   window.addEventListener('popstate', () => {
     guardUp = false;
 
+    if (leaving) {
+      leaving = false;
+      history.back();
+      // Falls nichts mehr zum Zurückgehen da ist (im Browser-Tab, in dem die App
+      // der erste Eintrag ist), bleiben wir hier — dann fehlt der Wächter. Kein
+      // Timer zum Nachrüsten: ein pushState würde den laufenden Schritt abbrechen
+      // und genau das Verlassen verhindern. Also erst beim nächsten Antippen.
+      document.addEventListener('pointerdown', pushGuard, { once: true });
+      return;
+    }
     if (!$('#cardPicker').classList.contains('hidden')) { closeCardPicker(); pushGuard(); return; }
     // Über den Abbrechen-Knopf, nicht über closeSheet: verschachtelte Sheets
     // haben dort ihren Rückweg zum vorherigen Sheet hinterlegt.
     if (!$('#sheet').classList.contains('hidden')) { $('#sheetCancel').click(); pushGuard(); return; }
     if (view !== 'home') { nav('home'); pushGuard(); return; }
 
-    toast('Nochmal zurück zum Beenden');
-    clearTimeout(guardTimer);
-    guardTimer = setTimeout(pushGuard, 2000);
+    askSheet('App verlassen?',
+      db.live
+        ? 'Die laufende Session bleibt gespeichert und läuft beim nächsten Start weiter.'
+        : 'Möchtest Du Pokertracker wirklich schließen?',
+      'Verlassen', leaveApp);
   });
 }
 
