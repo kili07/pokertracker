@@ -3,10 +3,13 @@
    ───────────────────────────────────────────────────────────── */
 'use strict';
 
+/* Bewusst derselbe Schlüssel wie in 1.x: 2.0 kommt als normales Update auf
+   schon installierte Apps, die vorhandenen Daten sollen einfach da sein.
+   normalize() ergänzt, was in älteren Datensätzen noch fehlt. */
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '2.0.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -17,6 +20,8 @@ const THEMES = {
   daylight: { label: 'Daylight', note: 'Hell, für den Tag',  bar: '#f3f5f9' },
   felt:     { label: 'Felt',     note: 'Pokertisch & Gold',  bar: '#0b1511' },
   neon:     { label: 'Neon',     note: 'Schwarz mit Cyan',   bar: '#06070c' },
+  sunset:   { label: 'Sunset',   note: 'Warmes Dunkel, Bernstein', bar: '#1c1210' },
+  blossom:  { label: 'Blossom',  note: 'Sanftes Hell, Rosé', bar: '#faf3f2' },
 };
 const THEME_KEYS = Object.keys(THEMES);
 
@@ -361,11 +366,11 @@ function renderHome() {
 
   $('#rollGrid').innerHTML = TYPE_KEYS.map((k) => {
     const b = bankroll(k), pr = totalProfit(k), n = sessionsOf(k).length;
-    return `<button class="roll" data-roll="${k}">
+    return `<div class="roll">
       <div class="roll-name">${TYPES[k].label}</div>
       <div class="roll-val">${money(b)}</div>
       <div class="roll-delta ${cls(pr)}">${n ? signed(pr) : '—'}</div>
-    </button>`;
+    </div>`;
   }).join('');
 
   drawChart();
@@ -380,6 +385,7 @@ function rowHTML(s) {
   const p = profit(s);
   return `<button class="row" data-sid="${s.id}">
     <span class="pill ${s.type}">${TYPES[s.type].short}</span>
+    ${s.photo ? `<img class="row-thumb" src="${s.photo}" alt="">` : ''}
     <span class="row-main">
       <span class="row-t">${esc(s.location || TYPES[s.type].label)}</span>
       <span class="row-s">${fmtDate(s.date)} · ${subLine(s)}</span>
@@ -642,10 +648,18 @@ const RANGES = {
   free: { label: 'Zeitraum',   days: -2 },
 };
 const MINDUR = { 0: 'egal', 60: 'ab 1 h', 120: 'ab 2 h', 180: 'ab 3 h', 300: 'ab 5 h' };
+const RESULTS = { all: 'Alle', win: 'Nur Gewinn', loss: 'Nur Verlust' };
+/* Montag zuerst, aber gespeichert wird der Wert von Date#getDay() (0=So),
+   damit der Vergleich gegen s.date ohne Umrechnung auskommt. */
+const WEEKDAYS = [
+  { d: 1, label: 'Mo' }, { d: 2, label: 'Di' }, { d: 3, label: 'Mi' }, { d: 4, label: 'Do' },
+  { d: 5, label: 'Fr' }, { d: 6, label: 'Sa' }, { d: 0, label: 'So' },
+];
 
 const statFilterBlank = () => ({
   range: 'all', from: '', to: '',
-  loc: '', stakes: '', tags: [], player: '', minMin: 0,
+  loc: [], stakes: [], tags: [], player: '', minMin: 0,
+  result: 'all', weekdays: [], buyinMin: 0, buyinMax: 0,
 });
 let statF = statFilterBlank();
 
@@ -670,12 +684,17 @@ function statSessions() {
     const t = new Date(s.date).getTime();
     if (von != null && t < von) return false;
     if (bis != null && t > bis) return false;
-    if (statF.loc && (s.location || '') !== statF.loc) return false;
-    if (statF.stakes && (s.stakes || '') !== statF.stakes) return false;
+    // Ort/Stakes/Tags sind je ein Oder: „Wien oder Graz" statt „Wien und Graz".
+    if (statF.loc.length && !statF.loc.includes(s.location || '')) return false;
+    if (statF.stakes.length && !statF.stakes.includes(s.stakes || '')) return false;
     if (statF.player && !(s.playerIds || []).includes(statF.player)) return false;
     if (statF.minMin && num(s.durationMin) < statF.minMin) return false;
-    // Tags sind ein Oder: „Tilt oder Müde" ist die Frage, die man stellt.
     if (statF.tags.length && !statF.tags.some((x) => (s.tags || []).includes(x))) return false;
+    if (statF.result === 'win' && !(profit(s) > 0)) return false;
+    if (statF.result === 'loss' && !(profit(s) < 0)) return false;
+    if (statF.weekdays.length && !statF.weekdays.includes(new Date(s.date).getDay())) return false;
+    if (statF.buyinMin && invested(s) < statF.buyinMin) return false;
+    if (statF.buyinMax && invested(s) > statF.buyinMax) return false;
     return true;
   });
 }
@@ -690,11 +709,18 @@ function statFilterText(n, gesamt) {
     const d = (v) => (v ? dfShort.format(new Date(v + 'T12:00')) : '…');
     if (statF.from || statF.to) bits.push(`${d(statF.from)} – ${d(statF.to)}`);
   } else if (statF.range !== 'all') bits.push(RANGES[statF.range].label);
-  if (statF.loc) bits.push(statF.loc);
-  if (statF.stakes) bits.push(statF.stakes);
+  if (statF.loc.length) bits.push(statF.loc.join(' / '));
+  if (statF.stakes.length) bits.push(statF.stakes.join(' / '));
   if (statF.tags.length) bits.push(statF.tags.join(' / '));
   if (statF.player) { const p = playerById(statF.player); if (p) bits.push('mit ' + p.name); }
   if (statF.minMin) bits.push(MINDUR[statF.minMin]);
+  if (statF.result !== 'all') bits.push(RESULTS[statF.result]);
+  if (statF.weekdays.length) {
+    bits.push(WEEKDAYS.filter((w) => statF.weekdays.includes(w.d)).map((w) => w.label).join('/'));
+  }
+  if (statF.buyinMin || statF.buyinMax) {
+    bits.push(`Buy-in ${statF.buyinMin || 0}–${statF.buyinMax || '∞'}`);
+  }
   // „Zeitraum" ohne Von und Bis schränkt nichts ein — dann bleibt die Liste leer.
   if (!bits.length) return `alle ${plural(gesamt, 'Session', 'Sessions')}`;
   return `${n} von ${gesamt} Sessions · ${bits.join(' · ')}`;
@@ -718,9 +744,29 @@ function openStatFilter() {
       <label>Bis<input type="date" id="sfTo" value="${esc(statF.to)}"></label>
     </div>
 
+    <div class="sec-title">Ergebnis</div>
+    <div class="tagbox" id="sfResult" style="margin-bottom:16px">${Object.keys(RESULTS).map((k) =>
+      `<button type="button" class="tag ${statF.result === k ? 'on' : ''}" data-res="${k}">${esc(RESULTS[k])}</button>`).join('')}</div>
+
+    <div class="sec-title">Wochentag <span class="muted">(einer davon reicht)</span></div>
+    <div class="tagbox" id="sfWeekday" style="margin-bottom:16px">${WEEKDAYS.map((w) =>
+      `<button type="button" class="tag ${statF.weekdays.includes(w.d) ? 'on' : ''}" data-d="${w.d}">${esc(w.label)}</button>`).join('')}</div>
+
+    <div class="sec-title">Buy-in-Bereich</div>
+    <div class="form-grid two" style="margin-bottom:16px">
+      <label>Von<input type="number" inputmode="decimal" id="sfBuyinMin" placeholder="0" value="${statF.buyinMin || ''}"></label>
+      <label>Bis<input type="number" inputmode="decimal" id="sfBuyinMax" placeholder="∞" value="${statF.buyinMax || ''}"></label>
+    </div>
+
+    ${orte.length ? `<div class="sec-title">Ort <span class="muted">(einer davon reicht)</span></div>
+    <div class="tagbox" id="sfLoc" style="margin-bottom:16px">${orte.map((o) =>
+      `<button type="button" class="tag ${statF.loc.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : ''}
+
+    ${stk.length ? `<div class="sec-title">Stakes <span class="muted">(einer davon reicht)</span></div>
+    <div class="tagbox" id="sfStakes" style="margin-bottom:16px">${stk.map((o) =>
+      `<button type="button" class="tag ${statF.stakes.includes(o) ? 'on' : ''}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>` : ''}
+
     <div class="form-grid" style="margin-bottom:16px">
-      <label>Ort<select id="sfLoc">${opt('', '— alle Orte —', statF.loc)}${orte.map((o) => opt(o, o, statF.loc)).join('')}</select></label>
-      ${stk.length ? `<label>Stakes<select id="sfStakes">${opt('', '— alle Stakes —', statF.stakes)}${stk.map((o) => opt(o, o, statF.stakes)).join('')}</select></label>` : ''}
       ${gegner.length ? `<label>Gegner am Tisch<select id="sfPlayer">${opt('', '— egal —', statF.player)}${gegner.map((p) => opt(p.id, p.name, statF.player)).join('')}</select></label>` : ''}
       <label>Mindestdauer<select id="sfMin">${Object.keys(MINDUR).map((m) =>
         `<option value="${m}"${+m === statF.minMin ? ' selected' : ''}>${esc(MINDUR[m])}</option>`).join('')}</select></label>
@@ -734,9 +780,12 @@ function openStatFilter() {
   `, () => {
     const g = (id) => { const el = $(id); return el ? el.value : ''; };
     statF.from = g('#sfFrom'); statF.to = g('#sfTo');
-    statF.loc = g('#sfLoc'); statF.stakes = g('#sfStakes');
     statF.player = g('#sfPlayer'); statF.minMin = num(g('#sfMin'));
+    statF.buyinMin = num(g('#sfBuyinMin')); statF.buyinMax = num(g('#sfBuyinMax'));
     statF.tags = $$('#sfTags .tag.on').map((b) => b.dataset.tag);
+    statF.loc = $$('#sfLoc .tag.on').map((b) => b.dataset.v);
+    statF.stakes = $$('#sfStakes .tag.on').map((b) => b.dataset.v);
+    statF.weekdays = $$('#sfWeekday .tag.on').map((b) => num(b.dataset.d));
     closeSheet(); renderStats();
   }, 'Anwenden');
 
@@ -746,11 +795,23 @@ function openStatFilter() {
     $$('#sfRange .tag').forEach((x) => x.classList.toggle('on', x === b));
     $('#sfFree').classList.toggle('hidden', statF.range !== 'free');
   };
-  const tb = $('#sfTags');
-  if (tb) tb.onclick = (e) => {
-    const b = e.target.closest('[data-tag]'); if (!b) return;
+  $('#sfResult').onclick = (e) => {
+    const b = e.target.closest('[data-res]'); if (!b) return;
+    statF.result = b.dataset.res;
+    $$('#sfResult .tag').forEach((x) => x.classList.toggle('on', x === b));
+  };
+  $('#sfWeekday').onclick = (e) => {
+    const b = e.target.closest('[data-d]'); if (!b) return;
     b.classList.toggle('on');
   };
+  // Toggle-Tagboxen: mehrere gleichzeitig an, genau wie bei Tags.
+  ['#sfLoc', '#sfStakes', '#sfTags'].forEach((sel) => {
+    const box = $(sel);
+    if (box) box.onclick = (e) => {
+      const b = e.target.closest('.tag'); if (!b) return;
+      b.classList.toggle('on');
+    };
+  });
   $('#sfReset').onclick = () => { statF = statFilterBlank(); closeSheet(); renderStats(); toast('Filter zurückgesetzt'); };
 }
 
@@ -893,7 +954,91 @@ function openSheet(title, html, saveFn, saveLabel) {
 function closeSheet() {
   $('#sheet').classList.add('hidden');
   $('#scrim').classList.add('hidden');
+  resetSheetDrag();                       // Reste einer Wischgeste abräumen
   sheetSaveFn = null;
+}
+
+/* ── Runterwischen schließt das Sheet ───────────────────────────
+   Bis jetzt ging das Sheet nur über „Abbrechen“ oder einen Tipp auf den
+   abgedunkelten Rand zu — auf dem Handy erwartet man stattdessen, es nach
+   unten wegzuschieben. Das Sheet folgt dabei dem Finger; weit genug unten
+   losgelassen rutscht es vollends raus, sonst federt es zurück.
+
+   Der Griff und die Kopfzeile ziehen immer, der Inhalt nur, solange er
+   ganz oben steht — sonst ließe sich die Liste darin nicht mehr scrollen.
+   Eingabefelder bleiben außen vor, damit das Markieren von Text im
+   Textfeld nicht als Wischen durchgeht. */
+function resetSheetDrag() {
+  const sheet = $('#sheet');
+  sheet.style.transition = '';
+  sheet.style.transform = '';
+  $('#scrim').style.opacity = '';
+}
+
+function wireSheetSwipe() {
+  const sheet = $('#sheet'), body = $('#sheetBody'), scrim = $('#scrim');
+  const CLOSE_PX = 105;        // so weit unten losgelassen: zu
+  const FLICK_PX = 45;         // darunter zählt kein Schnipp — sonst schließt
+  const FLICK_VEL = 0.55;      // schon ein hastiges Antippen das Sheet
+  let y0 = 0, dy = 0, lastY = 0, lastT = 0, vel = 0, armed = false, active = false, swallow = false;
+
+  sheet.addEventListener('touchstart', (e) => {
+    armed = active = false;
+    if (e.touches.length !== 1 || sheet.classList.contains('hidden')) return;
+    if (e.target.closest('input,select,textarea')) return;
+    if (body.contains(e.target) && body.scrollTop > 0) return;
+    y0 = lastY = e.touches[0].clientY;
+    lastT = Date.now(); dy = 0; vel = 0; armed = true;
+  }, { passive: true });
+
+  sheet.addEventListener('touchmove', (e) => {
+    if (!armed) return;
+    const y = e.touches[0].clientY;
+    dy = y - y0;
+    // Tempo aus dem letzten Stück, nicht über die ganze Geste: wer erst
+    // zögert und dann schnipst, soll trotzdem ein Schnipsen machen — und
+    // wer weit zieht und kurz vorm Loslassen zurückrudert, keines.
+    const dt = Date.now() - lastT;
+    if (dt > 0) { vel = (y - lastY) / dt; lastY = y; lastT = Date.now(); }
+    if (!active) {
+      if (dy < 8) { if (dy < -8) armed = false; return; }   // nach oben: normal scrollen
+      active = true;
+      sheet.style.transition = 'none';
+    }
+    if (e.cancelable) e.preventDefault();
+    sheet.style.transform = `translateY(${Math.max(0, dy)}px)`;
+    scrim.style.opacity = String(Math.max(0, 1 - Math.max(0, dy) / 420));
+  }, { passive: false });
+
+  const release = () => {
+    if (!armed) return;
+    const weg = active && (dy > CLOSE_PX || (dy > FLICK_PX && vel > FLICK_VEL));
+    // Nach einer Wischgeste unterdrücken wir den Klick, den das Loslassen
+    // sonst noch auf dem Element unter dem Finger auslöst.
+    if (active) { swallow = true; setTimeout(() => { swallow = false; }, 400); }
+    armed = active = false;
+    if (weg) {
+      sheet.style.transition = 'transform .2s ease-in';
+      scrim.style.transition = 'opacity .2s ease-in';
+      sheet.style.transform = 'translateY(110%)';
+      scrim.style.opacity = '0';
+      setTimeout(() => { scrim.style.transition = ''; closeSheet(); }, 190);
+      return;
+    }
+    sheet.style.transition = `transform var(--mid) var(--ease)`;
+    scrim.style.transition = 'opacity var(--mid)';
+    sheet.style.transform = '';
+    scrim.style.opacity = '';
+    setTimeout(() => { scrim.style.transition = ''; resetSheetDrag(); }, 230);
+  };
+  sheet.addEventListener('touchend', release);
+  sheet.addEventListener('touchcancel', release);
+
+  document.addEventListener('click', (e) => {
+    if (!swallow) return;
+    swallow = false;
+    e.stopPropagation(); e.preventDefault();
+  }, true);
 }
 
 /* ── Dialoge ────────────────────────────────────────────────────
@@ -1010,6 +1155,49 @@ function readPick(id) {
   return sel.value === '__new' ? (inp ? inp.value.trim() : '') : sel.value;
 }
 
+/* ── Chip-Auswahl ───────────────────────────────────────────────
+   Dieselbe Sache wie pickField, aber als Knopfleiste statt Klappliste:
+   im Assistenten steht pro Seite nur eine Frage, und ein Tipp auf den
+   richtigen Chip soll direkt weiterblättern — eine Klappliste bräuchte
+   dafür zwei Tipps plus einen dritten auf „Weiter". Gelesen wird über
+   readChip(id); der letzte Chip klappt ein Textfeld für einen eigenen
+   Wert auf. */
+function chipPick(id, options, value, newLabel) {
+  const known = [...options];
+  if (value && !known.includes(value)) known.unshift(value);
+  return `<div class="chippick" id="${id}_box">
+      ${known.map((o) => `<button type="button" data-val="${esc(o)}"${o === value ? ' class="on"' : ''}>${esc(o)}</button>`).join('')}
+      <button type="button" class="chip-add" data-val="__new">＋ ${esc(newLabel)}</button>
+    </div>
+    <input id="${id}" class="pick-new hidden" placeholder="${esc(newLabel)}" autocomplete="off" value="">`;
+}
+
+/** `onPick` wird aufgerufen, sobald ein fertiger Chip gewählt ist — im
+    Assistenten blättert das eine Seite weiter. Beim eigenen Wert erst,
+    wenn er mit Enter bestätigt wird. */
+function wireChip(id, onPick) {
+  const box = $('#' + id + '_box'), inp = $('#' + id);
+  if (!box || !inp) return;
+  box.onclick = (e) => {
+    const b = e.target.closest('[data-val]'); if (!b) return;
+    const neu = b.dataset.val === '__new';
+    $$('button', box).forEach((x) => x.classList.toggle('on', x === b));
+    inp.classList.toggle('hidden', !neu);
+    if (neu) { inp.focus(); return; }
+    inp.value = '';
+    if (onPick) onPick();
+  };
+  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); onPick && onPick(); } };
+}
+
+function readChip(id) {
+  const box = $('#' + id + '_box'); if (!box) return '';
+  const on = $('button.on', box); if (!on) return '';
+  if (on.dataset.val !== '__new') return on.dataset.val;
+  const inp = $('#' + id);
+  return inp ? inp.value.trim() : '';
+}
+
 /** Einen frisch eingetippten Ort in die Liste des Bereichs übernehmen, damit
     er beim nächsten Mal in der Auswahl steht — auch wenn die Session selbst
     später wieder gelöscht wird. */
@@ -1085,102 +1273,88 @@ function locationField(type, s) {
   return pickField('f_location', 'Ort', knownLocations(type), val, 'Neuer Ort');
 }
 
-/** mode: 'new' (Typwahl + Live-Start) | 'edit' (Löschen)
-          | 'finish' (Live-Abschluss) | 'live' (Details der laufenden Session) */
-function sessionForm(type, s, mode) {
-  s = s || {};
-  const d = s.date ? new Date(s.date) : new Date();
-  const dm = num(s.durationMin);
-  const live = mode === 'live';
+/* ── Foto-Anhang ────────────────────────────────────────────────
+   Data-URL direkt am Session-Objekt, deshalb vor dem Speichern zwingend
+   komprimiert (siehe compressPhoto) — sonst landet ein Handyfoto mit
+   mehreren MB direkt in db, das komplett synchron in localStorage
+   geschrieben wird (save(), s.o.), und in jedem Backup. */
+let wizPhoto = null;
+
+function photoField(dataUrl) {
   return `
-    ${mode === 'new' ? `<div class="typepick" id="typePick">${TYPE_KEYS.map((k) =>
-      `<button type="button" data-type="${k}" class="${k === type ? 'on' : ''}">
-         <span class="em">${TYPES[k].em}</span>${TYPES[k].label}</button>`).join('')}</div>` : ''}
-    <div class="form-grid">
-      <label>${live ? 'Beginn' : 'Datum &amp; Uhrzeit'}<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
-      <div id="locField">${locationField(type, s)}</div>
-      ${live ? '<div class="hint">Die Dauer kommt von der laufenden Uhr und läuft weiter.</div>' : `
-      <div class="form-grid two">
-        <label>Dauer — Stunden<input id="f_h" type="number" inputmode="numeric" placeholder="0" value="${dm ? Math.floor(dm / 60) : ''}"></label>
-        <label>Minuten<input id="f_m" type="number" inputmode="numeric" placeholder="0" value="${dm ? dm % 60 : ''}"></label>
-      </div>`}
-      <div class="divider"></div>
-      <div id="typeFields">${fieldsFor(type, s)}</div>
-      <div class="divider"></div>
-      ${playersHTML(s.playerIds)}
-      <div class="divider"></div>
-      ${tagsHTML(s.tags)}
-      <label>Notizen<textarea id="f_notes" placeholder="Wie lief die Session?">${esc(s.notes || '')}</textarea></label>
-      ${mode === 'new' && type !== 'casino' ? `<button type="button" class="btn btn-block" id="btnStartLive">▶︎ Stattdessen live mitlaufen lassen</button>` : ''}
-      ${mode === 'edit' ? `<button type="button" class="btn btn-danger btn-block" id="btnDelete">Session löschen</button>` : ''}
+    <div class="sec-title">Foto <span class="muted">(optional)</span></div>
+    <div class="photofield" id="f_photo">
+      <div class="photofield-prev${dataUrl ? '' : ' hidden'}" id="f_photoPrev">
+        ${dataUrl ? `<img src="${dataUrl}" alt="">` : ''}
+        <button type="button" class="link" id="f_photoRemove">Entfernen</button>
+      </div>
+      <button type="button" class="btn btn-block${dataUrl ? ' hidden' : ''}" id="f_photoPick">Foto hinzufügen</button>
+      <input type="file" id="f_photoInput" accept="image/*" capture="environment" class="hidden">
     </div>`;
 }
 
-let formType = 'cash';
-
-function wireForm(existing) {
-  wirePick('f_location');
-  wirePick('f_stakes');
-
-  const pick = $('#typePick');
-  if (pick) pick.onclick = (e) => {
-    const b = e.target.closest('[data-type]'); if (!b) return;
-    formType = b.dataset.type;
-    $$('#typePick button').forEach((x) => x.classList.toggle('on', x === b));
-    // Ort und Stakes gehören zum Bereich und müssen mitwechseln — sonst
-    // stünden im Turnier die Cash-Orte und ein Stakes-Feld, das es dort
-    // gar nicht gibt.
-    $('#locField').innerHTML = locationField(formType, null);
-    $('#typeFields').innerHTML = fieldsFor(formType);
-    wirePick('f_location');
-    wirePick('f_stakes');
-    const live = $('#btnStartLive');
-    if (live) live.classList.toggle('hidden', formType === 'casino');
-  };
-  $('#f_tags').onclick = (e) => {
-    const b = e.target.closest('[data-tag]'); if (!b) return;
-    b.classList.toggle('on');
-  };
-
-  const opp = $('#f_opp');
-  if (opp) opp.onclick = (e) => {
-    const b = e.target.closest('[data-pid]'); if (!b) return;
-    b.classList.toggle('on');
-  };
-  const addOpp = $('#btnAddOpp'), oppInp = $('#f_newOpp');
-  if (addOpp && oppInp) {
-    // Neuer Gegner wird sofort gespeichert — die Gegner-Liste hängt nicht
-    // daran, ob diese Session am Ende gesichert wird.
-    const doAdd = () => {
-      const p = findOrCreatePlayer(oppInp.value);
-      if (!p) return;
-      const sel = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
-      if (!sel.includes(p.id)) sel.push(p.id);
-      save();
-      opp.innerHTML = playerChips(sel);
-      oppInp.value = '';
-      oppInp.focus();
+/** Bild auf max. 1000px lange Kante skalieren und als JPEG (Qualität 0.7)
+    in eine Data-URL packen — bringt ein Handyfoto von mehreren MB auf
+    üblicherweise 50–150 KB. */
+function compressPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1000;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
     };
-    addOpp.onclick = doAdd;
-    oppInp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } };
-  }
-
-  const del = $('#btnDelete');
-  if (del) del.onclick = () => {
-    askSheet('Session löschen',
-      `${TYPES[existing.type].label} vom ${fmtDate(existing.date)} über ${signed(profit(existing))} wird entfernt.`,
-      'Löschen', () => {
-        db.sessions = db.sessions.filter((x) => x.id !== existing.id);
-        save(); closeSheet(); render(); toast('Session gelöscht');
-      }, () => editSession(existing.id), true);
-  };
-  const live = $('#btnStartLive');
-  if (live) live.onclick = () => startLive();
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
-function readForm(type, base) {
+/** Setzt `wizPhoto` auf den Startwert und verdrahtet Auswahl/Entfernen.
+    `wizPhoto` ist der Stand, den `readDetailFields()` beim Speichern
+    zurückliest — unabhängig davon, ob der Nutzer das Foto überhaupt
+    angefasst hat. */
+function wirePhotoField(existingUrl) {
+  wizPhoto = existingUrl || null;
+  const wrap = $('#f_photo'); if (!wrap) return;
+  const prev = $('#f_photoPrev'), pick = $('#f_photoPick'), input = $('#f_photoInput');
+  const showPhoto = () => {
+    prev.innerHTML = `<img src="${wizPhoto}" alt=""><button type="button" class="link" id="f_photoRemove">Entfernen</button>`;
+    prev.classList.remove('hidden');
+    pick.classList.add('hidden');
+    $('#f_photoRemove').onclick = clearPhoto;
+  };
+  const clearPhoto = () => {
+    wizPhoto = null;
+    prev.classList.add('hidden');
+    prev.innerHTML = '';
+    pick.classList.remove('hidden');
+  };
+  pick.onclick = () => input.click();
+  input.onchange = async () => {
+    const file = input.files[0]; if (!file) return;
+    try { wizPhoto = await compressPhoto(file); showPhoto(); }
+    catch (e) { toast('Foto konnte nicht gelesen werden'); }
+    input.value = '';
+  };
+  const rm = $('#f_photoRemove');
+  if (rm) rm.onclick = clearPhoto;
+}
+
+/** Liest Datum, Ort, Dauer und die typspezifischen Kernfelder (Buy-in,
+    Cash-out, Platzierung, …) — der Teil, der im Wizard auf dem
+    Eckdaten-Schritt steht. */
+function readCoreFields(type, base) {
   const g = (id) => { const el = $('#' + id); return el ? el.value : ''; };
-  const s = Object.assign({ id: uid(), type }, base || {});
+  const s = Object.assign({}, base || {});
   s.type = type;
   s.date = new Date(g('f_date') || Date.now()).toISOString();
   s.location = readPick('f_location');
@@ -1188,9 +1362,6 @@ function readForm(type, base) {
   // Bei der laufenden Session gibt es keine Dauer-Felder — dann bleibt der
   // Wert aus `base` stehen, die Uhr ist die Quelle.
   if ($('#f_h') || $('#f_m')) s.durationMin = num(g('f_h')) * 60 + num(g('f_m'));
-  s.notes = g('f_notes').trim();
-  s.tags = $$('#f_tags .tag.on').map((b) => b.dataset.tag);
-  if ($('#f_opp')) s.playerIds = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
 
   if (type === 'cash') {
     s.stakes = readPick('f_stakes');
@@ -1213,6 +1384,19 @@ function readForm(type, base) {
   return s;
 }
 
+/** Liest Gegner, Tags, Notizen und Foto — der Teil, der im Wizard auf dem
+    Details-Schritt steht. Felder, die nicht im DOM stehen, bleiben
+    unangetastet (wichtig, damit ein Zwischenaufruf nichts aus `base` löscht). */
+function readDetailFields(base) {
+  const g = (id) => { const el = $('#' + id); return el ? el.value : ''; };
+  const s = Object.assign({}, base || {});
+  if ($('#f_notes')) s.notes = g('f_notes').trim();
+  if ($('#f_tags')) s.tags = $$('#f_tags .tag.on').map((b) => b.dataset.tag);
+  if ($('#f_opp')) s.playerIds = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
+  if ($('#f_photo')) s.photo = wizPhoto;
+  return s;
+}
+
 /** "1/2" oder "0,5/1" → Big Blind als Zahl. */
 function bbFromStakes(str) {
   if (!str) return 0;
@@ -1220,24 +1404,561 @@ function bbFromStakes(str) {
   return parts.length ? Math.max(...parts) : 0;
 }
 
+/* ── Session-Wizard ─────────────────────────────────────────────
+   Zwei Abläufe teilen sich `wiz`:
+
+   • `mode:'new'` — der Klick-für-Klick-Assistent (siehe WIZ_PAGES weiter
+     unten): eine Frage pro Seite, am Ende eine Zusammenfassung zum
+     Bestätigen oder Nachbessern. Gesteuert über `wiz.idx` in der Liste
+     aus `wizSteps()`.
+   • 'edit' / 'finish' / 'live' — das kompakte Zwei-Schritt-Formular
+     (Eckdaten → Details). Beim Bearbeiten will man alles auf einen Blick
+     und nicht durch acht Seiten blättern; beim Abschließen einer
+     laufenden Session fehlt meist nur noch der Cash-out.
+
+   `wiz.data` sammelt die Felder über die Schritte hinweg ein —
+   `readCoreFields()`/`readDetailFields()` (s.o.) lesen dabei jeweils nur,
+   was auf dem aktuellen Schritt im DOM steht, und lassen den Rest von
+   `wiz.data` unangetastet, auch beim Zurückblättern. */
+let wiz = { mode: 'new', type: 'cash', data: {}, step: 1, live: false, idx: 0, ret: false };
+
+const wizTotalSteps = () => 2;
+
+function wizardProgress() {
+  const total = wizTotalSteps();
+  return `<div class="wiz-steps">${Array.from({ length: total }, (_, i) => i + 1).map((n) =>
+    `<span class="wiz-dot${n === wiz.step ? ' on' : ''}${n < wiz.step ? ' done' : ''}"></span>`).join('')}</div>`;
+}
+
 function newSession() {
-  formType = db.defaults.type;
-  openSheet('Neue Session', sessionForm(formType, null, 'new'), () => {
-    const s = readForm(formType);
-    db.sessions.push(s); save(); closeSheet(); render();
-    toast('Session gespeichert');
-  });
-  wireForm(null);
+  wiz = { mode: 'new', type: db.defaults.type, data: {}, step: 1, live: false, idx: 0, ret: false };
+  wizPhoto = null;
+  openWizardStep();
 }
 
 function editSession(id) {
   const s = db.sessions.find((x) => x.id === id); if (!s) return;
-  openSheet(TYPES[s.type].label + ' bearbeiten', sessionForm(s.type, s, 'edit'), () => {
-    const upd = readForm(s.type, { id: s.id });
-    Object.assign(s, upd); save(); closeSheet(); render();
+  wiz = { mode: 'edit', type: s.type, data: Object.assign({}, s), step: 1, live: false, idx: 0, ret: false };
+  openWizardStep();
+}
+
+function openWizardStep() {
+  if (wiz.mode === 'new') return openWizPage();
+  if (wiz.step === wizTotalSteps()) return openWizardDetails();
+  return openWizardCore();
+}
+
+/** Überschrift der Eckdaten/Details-Schritte je Modus. */
+const WIZ_TITLE = {
+  edit: () => TYPES[wiz.type].label + ' bearbeiten',
+  finish: () => 'Session abschließen',
+  live: () => 'Details bearbeiten',
+};
+
+function openWizardCore() {
+  const showDuration = wiz.mode !== 'live';
+  const d = wiz.data.date ? new Date(wiz.data.date) : new Date();
+  const dm = num(wiz.data.durationMin);
+  openSheet(WIZ_TITLE[wiz.mode](), `
+    ${wizardProgress()}
+    <div class="form-grid">
+      <label>${showDuration ? 'Datum &amp; Uhrzeit' : 'Beginn'}<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
+      <div id="locField">${locationField(wiz.type, wiz.data)}</div>
+      ${showDuration ? `
+      <div class="form-grid two">
+        <label>Dauer — Stunden<input id="f_h" type="number" inputmode="numeric" placeholder="0" value="${dm ? Math.floor(dm / 60) : ''}"></label>
+        <label>Minuten<input id="f_m" type="number" inputmode="numeric" placeholder="0" value="${dm ? dm % 60 : ''}"></label>
+      </div>` : '<div class="hint">Die Dauer kommt von der laufenden Uhr und läuft weiter.</div>'}
+      <div class="divider"></div>
+      <div id="typeFields">${fieldsFor(wiz.type, wiz.data)}</div>
+    </div>
+  `, () => {
+    wiz.data = readCoreFields(wiz.type, wiz.data);
+    wiz.step += 1;
+    openWizardStep();
+  }, 'Weiter');
+  wirePick('f_location');
+  wirePick('f_stakes');
+  if (wiz.mode === 'live') {
+    $('#sheetCancel').textContent = 'Abbrechen';
+    $('#sheetCancel').onclick = () => openLive();
+  } else {
+    $('#sheetCancel').textContent = 'Abbrechen';   // Standard: schließt (closeSheet)
+  }
+  if (wiz.mode === 'finish') {
+    const f = $(wiz.type === 'cash' ? '#f_cashout' : '#f_prize');
+    if (f) { f.focus(); f.select?.(); }
+  }
+}
+
+function openWizardDetails() {
+  openSheet(WIZ_TITLE[wiz.mode](), `
+    ${wizardProgress()}
+    <div class="form-grid">
+      ${playersHTML(wiz.data.playerIds)}
+      <div class="divider"></div>
+      ${tagsHTML(wiz.data.tags)}
+      <label>Notizen<textarea id="f_notes" placeholder="Wie lief die Session?">${esc(wiz.data.notes || '')}</textarea></label>
+      <div class="divider"></div>
+      ${photoField(wiz.data.photo)}
+      ${wiz.mode === 'edit' ? '<button type="button" class="btn btn-danger btn-block" id="btnDelete">Session löschen</button>' : ''}
+    </div>
+  `, () => saveWizard(), 'Sichern');
+  wirePhotoField(wiz.data.photo);
+  $('#f_tags').onclick = (e) => {
+    const b = e.target.closest('[data-tag]'); if (!b) return;
+    b.classList.toggle('on');
+  };
+  wireOpponentPicker();
+  const del = $('#btnDelete');
+  if (del) del.onclick = () => {
+    const existing = wiz.data;
+    askSheet('Session löschen',
+      `${TYPES[existing.type].label} vom ${fmtDate(existing.date)} über ${signed(profit(existing))} wird entfernt.`,
+      'Löschen', () => {
+        db.sessions = db.sessions.filter((x) => x.id !== existing.id);
+        save(); closeSheet(); render(); toast('Session gelöscht');
+      }, () => openWizardDetails(), true);
+  };
+  $('#sheetCancel').textContent = 'Zurück';
+  $('#sheetCancel').onclick = () => {
+    wiz.data = readDetailFields(wiz.data);
+    wiz.step -= 1;
+    openWizardStep();
+  };
+}
+
+/** Speichert, was der jeweilige Modus daraus macht — bestehende Session
+    überschreiben oder die laufende abschließen/aktualisieren. Neue Sessions
+    laufen über den Assistenten und `wizFinish()`. */
+function saveWizard() {
+  const s = readDetailFields(wiz.data);
+  s.type = wiz.type;
+  if (wiz.mode === 'edit') {
+    const existing = db.sessions.find((x) => x.id === s.id); if (!existing) return;
+    Object.assign(existing, s); save(); closeSheet(); render();
     toast('Gespeichert');
+  } else if (wiz.mode === 'finish') {
+    if (!s.id) s.id = uid();
+    db.sessions.push(s); db.live = null; save(); closeSheet(); render();
+    toast('Session gespeichert');
+  } else if (wiz.mode === 'live') {
+    const L = db.live; if (!L) return;
+    L.startedAt = s.date;
+    Object.assign(L.data, s);
+    save(); renderLiveBar(); openLive();
+    toast('Details aktualisiert');
+  }
+}
+
+/* ── Assistent für neue Sessions ────────────────────────────────
+   Eine Frage pro Seite statt eines Formulars am Stück: erst die Art, dann
+   sofort die Entscheidung „live mitlaufen lassen oder nachträglich
+   eintragen" — davon hängt ab, welche Fragen überhaupt noch kommen (bei
+   einer laufenden Session gibt es weder Cash-out noch Dauer, die liefert
+   die Uhr). Zum Schluss stehen alle Antworten auf einer Seite, jede Zeile
+   führt zum passenden Schritt zurück.
+
+   Jede Seite in WIZ_PAGES ist ein kleines Bündel aus:
+     title()   Überschrift des Sheets
+     q()       die Frage
+     html()    Inhalt
+     wire()    Verdrahtung nach dem Einfügen  (optional)
+     read()    schreibt die Antwort nach wiz.data  (optional)
+     sum()     Zeilen für die Zusammenfassung: [[Bezeichnung, Wert], …]
+     choice    true = ohne „Weiter"-Knopf, der Tipp blättert selbst weiter
+     next()    abweichende Beschriftung des Weiter-Knopfs
+     onNext()  abweichende Aktion des Weiter-Knopfs
+     focus     true = erstes Eingabefeld gleich aktivieren */
+
+/** Die Schrittfolge hängt an Art und Erfassungsart und wird deshalb bei
+    jedem Blättern neu bestimmt, nie zwischengespeichert. */
+function wizSteps() {
+  const t = wiz.type, live = wiz.live && t !== 'casino';
+  const out = ['type'];
+  if (t !== 'casino') out.push('mode');
+  if (t === 'cash') {
+    out.push('stakes', 'location', 'seats', 'buyin');
+    if (!live) out.push('cashout');
+  } else if (t === 'mtt') {
+    out.push('location', 'buyin');
+    if (!live) out.push('result');
+  } else {
+    out.push('location', 'game', 'result');
+  }
+  if (!live) out.push('when');
+  out.push('opponents');
+  if (!live) out.push('extras');
+  out.push('summary');
+  return out;
+}
+
+const WIZ_PAGES = {
+  type: {
+    title: () => 'Neue Session',
+    q: () => 'Was spielst Du?',
+    choice: true,
+    html: () => `<div class="typepick wiz-typepick" id="wizPick">${TYPE_KEYS.map((k) =>
+      `<button type="button" data-val="${k}"${k === wiz.type ? ' class="on"' : ''}>
+         <span class="em">${TYPES[k].em}</span>${TYPES[k].label}</button>`).join('')}</div>`,
+    wire: () => wizChoice((v) => {
+      // Die Felder unterscheiden sich je Art — beim Umschalten fängt der
+      // Assistent deshalb von vorn an, statt halbe Antworten mitzuschleppen.
+      if (v !== wiz.type) { wiz.type = v; wiz.data = {}; wizPhoto = null; }
+    }),
+    sum: () => [['Art', TYPES[wiz.type].label]],
+  },
+
+  mode: {
+    title: () => TYPES[wiz.type].label,
+    q: () => 'Wie möchtest Du sie erfassen?',
+    choice: true,
+    html: () => `<div class="typepick wiz-typepick" id="wizPick">
+      <button type="button" data-val="live"${wiz.live ? ' class="on"' : ''}>
+        <span class="em">⏱</span><span class="wiz-opt"><b>Live mitlaufen lassen</b>
+        <small>Die Uhr läuft mit, Nachkäufe trägst Du unterwegs ein</small></span></button>
+      <button type="button" data-val="past"${wiz.live ? '' : ' class="on"'}>
+        <span class="em">✎</span><span class="wiz-opt"><b>Nachträglich eintragen</b>
+        <small>Die Session ist vorbei — Ergebnis steht fest</small></span></button>
+    </div>`,
+    wire: () => wizChoice((v) => { wiz.live = v === 'live'; }),
+    sum: () => [['Erfassung', wiz.live ? 'Live · Uhr läuft mit' : 'Nachträglich']],
+  },
+
+  stakes: {
+    title: () => 'Blinds',
+    q: () => 'Welche Blinds?',
+    html: () => chipPick('f_stakes', knownStakes(),
+      wiz.data.stakes != null ? wiz.data.stakes : db.defaults.stakes, 'Andere Blinds'),
+    wire: () => wireChip('f_stakes', wizNext),
+    read: () => {
+      wiz.data.stakes = readChip('f_stakes');
+      rememberStakes(wiz.data.stakes);
+      wiz.data.bb = bbFromStakes(wiz.data.stakes);
+    },
+    sum: () => [['Blinds', wiz.data.stakes]],
+  },
+
+  location: {
+    title: () => 'Ort',
+    q: () => (wiz.live ? 'Wo spielst Du?' : 'Wo hast Du gespielt?'),
+    html: () => chipPick('f_location', knownLocations(wiz.type),
+      wiz.data.location != null ? wiz.data.location : (db.defaults.location[wiz.type] || ''), 'Neuer Ort'),
+    wire: () => wireChip('f_location', wizNext),
+    read: () => {
+      wiz.data.location = readChip('f_location');
+      rememberLocation(wiz.type, wiz.data.location);
+    },
+    sum: () => [['Ort', wiz.data.location]],
+  },
+
+  seats: {
+    title: () => 'Tisch',
+    q: () => 'Wie viele Spieler sitzen am Tisch?',
+    html: () => chipPick('f_players', ['2', '4', '5', '6', '7', '8', '9', '10'],
+      wiz.data.players ? String(wiz.data.players) : '', 'Andere Anzahl'),
+    wire: () => wireChip('f_players', wizNext),
+    read: () => { wiz.data.players = num(readChip('f_players')); },
+    sum: () => [['Spieler am Tisch', wiz.data.players || '']],
+  },
+
+  buyin: {
+    title: () => 'Buy-in',
+    q: () => (wiz.type === 'cash'
+      ? (wiz.live ? 'Wie viel legst Du auf den Tisch?' : 'Wie viel hast Du insgesamt eingesetzt?')
+      : 'Was kostet der Antritt?'),
+    focus: true,
+    html: () => (wiz.type === 'cash'
+      ? `<label>Buy-in gesamt (€)<input id="f_buyin" type="number" inputmode="decimal" step="any"
+           placeholder="200" value="${esc(wiz.data.buyin == null ? '' : wiz.data.buyin)}"></label>
+         <div class="hint" style="margin-top:8px">Nachkäufe kommen später dazu — ${wiz.live
+           ? 'während der Session über „＋ Nachkauf".'
+           : 'trag hier alles ein, was Du insgesamt auf den Tisch gelegt hast.'}</div>`
+      : `<div class="form-grid two">
+           <label>Buy-in (€)<input id="f_buyin" type="number" inputmode="decimal" step="any"
+             placeholder="100" value="${esc(wiz.data.buyin == null ? '' : wiz.data.buyin)}"></label>
+           <label>Gebühr (€)<input id="f_fee" type="number" inputmode="decimal" step="any"
+             placeholder="10" value="${esc(wiz.data.fee == null ? '' : wiz.data.fee)}"></label>
+           ${wiz.live ? '' : `<label>Entries<input id="f_entries" type="number" inputmode="numeric"
+             placeholder="1" value="${esc(wiz.data.entries == null ? '' : wiz.data.entries)}"></label>`}
+         </div>
+         <div class="hint" style="margin-top:8px">${wiz.live
+           ? 'Re-entries und Add-ons trägst Du während des Turniers nach.'
+           : 'Entries = 1 + Re-entries. Buy-in und Gebühr zählen je Entry.'}</div>`),
+    read: () => {
+      wiz.data.buyin = wizNum('f_buyin');
+      if (wiz.type === 'mtt') {
+        wiz.data.fee = wizNum('f_fee');
+        if ($('#f_entries')) wiz.data.entries = Math.max(1, wizNum('f_entries') || 1);
+        else if (!wiz.data.entries) wiz.data.entries = 1;
+      }
+    },
+    sum: () => (wiz.type === 'cash'
+      ? [['Buy-in', money(num(wiz.data.buyin))]]
+      : [['Buy-in + Gebühr', money(num(wiz.data.buyin) + num(wiz.data.fee))],
+         ['Entries', wiz.data.entries || 1]]),
+  },
+
+  cashout: {
+    title: () => 'Cash-out',
+    q: () => 'Mit wie viel bist Du aufgestanden?',
+    focus: true,
+    html: () => `<label>Cash-out (€)<input id="f_cashout" type="number" inputmode="decimal" step="any"
+        placeholder="340" value="${esc(wiz.data.cashout == null ? '' : wiz.data.cashout)}"></label>
+      <div class="hint" style="margin-top:8px">Der komplette Betrag, den Du vom Tisch mitgenommen hast.</div>`,
+    read: () => { wiz.data.cashout = wizNum('f_cashout'); },
+    sum: () => [['Cash-out', money(num(wiz.data.cashout))]],
+  },
+
+  game: {
+    title: () => 'Spiel',
+    q: () => 'Was hast Du gespielt?',
+    html: () => chipPick('f_game', knownGames(), wiz.data.game || '', 'Anderes Spiel'),
+    wire: () => wireChip('f_game', wizNext),
+    read: () => { wiz.data.game = readChip('f_game'); },
+    sum: () => [['Spiel', wiz.data.game]],
+  },
+
+  result: {
+    title: () => 'Ergebnis',
+    q: () => (wiz.type === 'mtt' ? 'Wie ist es ausgegangen?' : 'Was ist unterm Strich geblieben?'),
+    focus: true,
+    html: () => (wiz.type === 'mtt'
+      ? `<div class="form-grid two">
+           <label>Platzierung<input id="f_place" type="number" inputmode="numeric"
+             placeholder="7" value="${esc(wiz.data.place == null ? '' : wiz.data.place)}"></label>
+           <label>Feldgröße<input id="f_fieldSize" type="number" inputmode="numeric"
+             placeholder="120" value="${esc(wiz.data.fieldSize == null ? '' : wiz.data.fieldSize)}"></label>
+         </div>
+         <label style="margin-top:12px">Preisgeld (€)<input id="f_prize" type="number" inputmode="decimal" step="any"
+           placeholder="0" value="${esc(wiz.data.prize == null ? '' : wiz.data.prize)}"></label>
+         <div class="hint" style="margin-top:8px">Ohne Geld ausgeschieden? Preisgeld einfach leer lassen.</div>`
+      : `<label>Ergebnis (€)<input id="f_result" type="number" inputmode="decimal" step="any"
+           placeholder="−20" value="${esc(wiz.data.result == null ? '' : wiz.data.result)}"></label>
+         <div class="hint" style="margin-top:8px">Gewinn positiv, Verlust negativ — z.B. <b>−20</b> für 20 € Verlust.</div>`),
+    read: () => {
+      if (wiz.type === 'mtt') {
+        wiz.data.place = wizNum('f_place');
+        wiz.data.fieldSize = wizNum('f_fieldSize');
+        wiz.data.prize = wizNum('f_prize');
+      } else {
+        wiz.data.result = wizNum('f_result');
+      }
+    },
+    sum: () => (wiz.type === 'mtt'
+      ? [['Platzierung', wiz.data.place ? wiz.data.place + (wiz.data.fieldSize ? ' von ' + wiz.data.fieldSize : '') : ''],
+         ['Preisgeld', money(num(wiz.data.prize))]]
+      : [['Ergebnis', signed(num(wiz.data.result))]]),
+  },
+
+  when: {
+    title: () => 'Wann',
+    q: () => 'Wann war das, und wie lange?',
+    html: () => {
+      const d = wiz.data.date ? new Date(wiz.data.date) : new Date();
+      const dm = num(wiz.data.durationMin);
+      return `<label>Datum &amp; Uhrzeit<input id="f_date" type="datetime-local" value="${localISO(d)}"></label>
+        <div class="form-grid two" style="margin-top:12px">
+          <label>Dauer — Stunden<input id="f_h" type="number" inputmode="numeric" placeholder="0"
+            value="${dm ? Math.floor(dm / 60) : ''}"></label>
+          <label>Minuten<input id="f_m" type="number" inputmode="numeric" placeholder="0"
+            value="${dm ? dm % 60 : ''}"></label>
+        </div>`;
+    },
+    read: () => {
+      wiz.data.date = new Date($('#f_date').value || Date.now()).toISOString();
+      wiz.data.durationMin = wizNum('f_h') * 60 + wizNum('f_m');
+    },
+    sum: () => [['Wann', wiz.data.date ? fmtDate(wiz.data.date) : ''],
+                ['Dauer', wiz.data.durationMin ? fmtDur(wiz.data.durationMin) : '']],
+  },
+
+  opponents: {
+    title: () => 'Gegner',
+    q: () => 'Wer sitzt mit am Tisch?',
+    html: () => playersHTML(wiz.data.playerIds) +
+      '<div class="hint" style="margin-top:10px">Antippen zum Auswählen — kannst Du später jederzeit ergänzen.</div>',
+    wire: () => wireOpponentPicker(),
+    read: () => { wiz.data.playerIds = $$('#f_opp .tag.on').map((b) => b.dataset.pid); },
+    sum: () => [['Gegner', (wiz.data.playerIds || []).map(playerById).filter(Boolean)
+      .map((p) => p.name).join(', ')]],
+  },
+
+  extras: {
+    title: () => 'Notizen',
+    q: () => 'Noch etwas festhalten?',
+    html: () => `${tagsHTML(wiz.data.tags)}
+      <label style="margin-top:14px">Notizen<textarea id="f_notes"
+        placeholder="Wie lief die Session?">${esc(wiz.data.notes || '')}</textarea></label>
+      <div class="divider"></div>
+      ${photoField(wiz.data.photo)}`,
+    wire: () => {
+      wirePhotoField(wiz.data.photo);
+      $('#f_tags').onclick = (e) => {
+        const b = e.target.closest('[data-tag]'); if (!b) return;
+        b.classList.toggle('on');
+      };
+    },
+    read: () => { wiz.data = readDetailFields(wiz.data); },
+    sum: () => [['Tags', (wiz.data.tags || []).join(', ')],
+                ['Notizen', wiz.data.notes],
+                ['Foto', wiz.data.photo ? 'angehängt' : '']],
+  },
+
+  summary: {
+    title: () => 'Überprüfen',
+    q: () => (wiz.live ? 'Passt alles? Dann läuft die Uhr los.' : 'Passt alles?'),
+    html: () => `<div class="wiz-sum" id="wizSum">${wizSummaryRows().map((r) =>
+        `<button type="button" class="wiz-sum-row" data-step="${r.step}">
+           <span class="k">${esc(r.label)}</span>
+           <span class="v${r.val ? '' : ' unset'}">${esc(r.val || '—')}</span>
+           <span class="ed">✎</span></button>`).join('')}</div>
+      <div class="hint" style="margin-top:12px">${wiz.live
+        ? 'Zeile antippen, um sie zu ändern. Während die Session läuft, kommst Du über „✎ Details bearbeiten" jederzeit wieder dran.'
+        : 'Zeile antippen, um sie zu ändern.'}</div>`,
+    wire: () => {
+      $('#wizSum').onclick = (e) => {
+        const b = e.target.closest('[data-step]'); if (!b) return;
+        const i = wizSteps().indexOf(b.dataset.step);
+        if (i < 0) return;
+        wiz.ret = true;
+        wiz.idx = i;
+        openWizPage();
+      };
+    },
+    next: () => (wiz.live ? '▶︎ Starten' : 'Sichern'),
+    onNext: () => wizFinish(),
+  },
+};
+
+/** Kurzform für „Zahl aus dem Feld, falls es auf dieser Seite steht". */
+function wizNum(id) {
+  const el = $('#' + id);
+  return el ? num(el.value) : 0;
+}
+
+/** Bisher bespielte Casino-Spiele als Vorschlag. */
+function knownGames() {
+  return [...new Set(db.sessions.filter((s) => s.type === 'casino').map((s) => s.game).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'de'));
+}
+
+/** Verdrahtung der beiden Auswahlseiten (Art, Erfassung): ein Tipp legt den
+    Wert fest und blättert weiter. `wiz.ret` fällt dabei weg — beide ändern
+    die Schrittfolge, danach läuft der Assistent wieder normal durch. */
+function wizChoice(set) {
+  $('#wizPick').onclick = (e) => {
+    const b = e.target.closest('[data-val]'); if (!b) return;
+    set(b.dataset.val);
+    wiz.ret = false;
+    wiz.idx += 1;
+    openWizPage();
+  };
+}
+
+/** Gegner-Chips samt „Gegner hinzufügen" — identisch im Assistenten und im
+    Details-Schritt des kompakten Formulars. */
+function wireOpponentPicker() {
+  const opp = $('#f_opp');
+  if (opp) opp.onclick = (e) => {
+    const b = e.target.closest('[data-pid]'); if (!b) return;
+    b.classList.toggle('on');
+  };
+  const addOpp = $('#btnAddOpp'), oppInp = $('#f_newOpp');
+  if (!addOpp || !oppInp) return;
+  // Neuer Gegner wird sofort gespeichert — die Gegner-Liste hängt nicht
+  // daran, ob diese Session am Ende gesichert wird.
+  const doAdd = () => {
+    const p = findOrCreatePlayer(oppInp.value);
+    if (!p) return;
+    const sel = $$('#f_opp .tag.on').map((b) => b.dataset.pid);
+    if (!sel.includes(p.id)) sel.push(p.id);
+    save();
+    opp.innerHTML = playerChips(sel);
+    oppInp.value = '';
+    oppInp.focus();
+  };
+  addOpp.onclick = doAdd;
+  oppInp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } };
+}
+
+function wizSummaryRows() {
+  const rows = [];
+  wizSteps().forEach((k) => {
+    const S = WIZ_PAGES[k];
+    if (!S.sum) return;
+    S.sum().forEach(([label, val]) => rows.push({
+      step: k, label, val: val == null ? '' : String(val),
+    }));
   });
-  wireForm(s);
+  return rows;
+}
+
+function wizProgress() {
+  const steps = wizSteps();
+  return `<div class="wiz-steps">${steps.map((_, i) =>
+    `<span class="wiz-dot${i === wiz.idx ? ' on' : ''}${i < wiz.idx ? ' done' : ''}"></span>`).join('')}</div>`;
+}
+
+function openWizPage() {
+  const steps = wizSteps();
+  wiz.idx = Math.min(Math.max(0, wiz.idx), steps.length - 1);
+  const key = steps[wiz.idx];
+  const S = WIZ_PAGES[key];
+
+  openSheet(S.title(), `
+    ${wizProgress()}
+    <div class="wiz-q">${S.q()}</div>
+    ${S.html()}
+  `, S.choice ? null : (S.onNext || wizNext), (S.next ? S.next() : 'Weiter'));
+
+  // Nur ganz am Anfang bricht es wirklich ab — aus einer von der
+  // Zusammenfassung angesprungenen Seite geht es dorthin zurück.
+  $('#sheetCancel').textContent = (wiz.idx === 0 && !wiz.ret) ? 'Abbrechen' : 'Zurück';
+  $('#sheetCancel').onclick = wizBack;
+  if (S.wire) S.wire();
+
+  // Enter im Eingabefeld blättert weiter — sonst müsste man die Tastatur
+  // erst wegklappen, um an „Weiter" zu kommen.
+  if (!S.choice) {
+    $$('#sheetBody input:not([type=file])').forEach((el) => {
+      if (el.onkeydown) return;                 // Chip-Feld bringt seins schon mit
+      el.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sheetSaveFn && sheetSaveFn(); } };
+    });
+    if (S.focus) {
+      const first = $('#sheetBody input:not(.hidden):not([type=file])');
+      if (first) { first.focus(); first.select && first.select(); }
+    }
+  }
+}
+
+function wizNext() {
+  const S = WIZ_PAGES[wizSteps()[wiz.idx]];
+  if (S.read) S.read();
+  if (wiz.ret) { wiz.ret = false; wiz.idx = wizSteps().indexOf('summary'); }
+  else wiz.idx += 1;
+  openWizPage();
+}
+
+/** „Zurück" — aus einer über die Zusammenfassung angesprungenen Seite
+    zurück zur Zusammenfassung, sonst eine Seite nach hinten. Antworten
+    werden auch dabei übernommen, damit beim Vorblättern nichts fehlt. */
+function wizBack() {
+  const S = WIZ_PAGES[wizSteps()[wiz.idx]];
+  if (S.read) S.read();
+  if (wiz.ret) { wiz.ret = false; wiz.idx = wizSteps().indexOf('summary'); }
+  else if (wiz.idx === 0) { closeSheet(); return; }
+  else wiz.idx -= 1;
+  openWizPage();
+}
+
+/** Ende des Assistenten: entweder Uhr an oder direkt in die Liste. */
+function wizFinish() {
+  const s = Object.assign({ id: uid() }, wiz.data, { type: wiz.type });
+  if (wiz.live && wiz.type !== 'casino') { startLive(wiz.type, s); return; }
+  if (!s.date) s.date = new Date().toISOString();
+  db.sessions.push(s); save(); closeSheet(); render();
+  toast('Session gespeichert');
 }
 
 /* ── Live-Session ───────────────────────────────────────────── */
@@ -1246,11 +1967,11 @@ function elapsed() {
   return db.live.elapsedMs + (db.live.running ? Date.now() - db.live.lastStart : 0);
 }
 
-function startLive() {
-  const type = formType;
-  const d = readForm(type);          // aktuelle Formularwerte übernehmen
+/** Uhr an. `data` kommt fertig aus dem Assistenten — die Session beginnt
+    jetzt, ein im Assistenten gesetztes Datum spielt deshalb keine Rolle. */
+function startLive(type, data) {
   db.live = {
-    type, data: d,
+    type, data: Object.assign({}, data),
     elapsedMs: 0, running: true, lastStart: Date.now(),
     startedAt: new Date().toISOString(),
   };
@@ -1339,17 +2060,8 @@ function openLive() {
     Die Dauer bleibt außen vor — die kommt aus dem Timer. */
 function editLiveDetails() {
   const L = db.live; if (!L) return;
-  formType = L.type;
-  const d = Object.assign({}, L.data, { date: L.startedAt });
-  openSheet('Details bearbeiten', sessionForm(L.type, d, 'live'), () => {
-    const upd = readForm(L.type, { id: L.data.id, durationMin: L.data.durationMin });
-    L.startedAt = upd.date;
-    Object.assign(L.data, upd);
-    save(); closeSheet(); renderLiveBar(); openLive();
-    toast('Details aktualisiert');
-  });
-  wireForm(null);
-  $('#sheetCancel').onclick = () => { openLive(); };   // zurück, nicht zumachen
+  wiz = { mode: 'live', type: L.type, data: Object.assign({}, L.data, { date: L.startedAt }), step: 1 };
+  openWizardStep();
 }
 
 function endLive() {
@@ -1358,15 +2070,8 @@ function endLive() {
     date: L.startedAt,
     durationMin: Math.round(elapsed() / 60000),
   });
-  formType = L.type;
-  openSheet('Session abschließen', sessionForm(L.type, d, 'finish'), () => {
-    const s = readForm(L.type);
-    db.sessions.push(s); db.live = null; save(); closeSheet(); render();
-    toast('Session gespeichert');
-  });
-  wireForm(null);
-  const f = $(L.type === 'cash' ? '#f_cashout' : '#f_prize');
-  if (f) { f.focus(); f.select?.(); }
+  wiz = { mode: 'finish', type: L.type, data: d, step: 1 };
+  openWizardStep();
 }
 
 setInterval(() => {
@@ -1505,6 +2210,11 @@ function openSettings() {
     <p class="hint" style="margin:8px 0 12px">Anfangsstand je Bereich — der Betrag, den Du
       hattest, bevor Du hier angefangen hast zu tracken.</p>
     <button class="btn btn-block" id="btnStart" style="margin-bottom:18px">Start-Bankroll festlegen</button>
+    <p class="hint" style="margin:0 0 12px">Ein-/Auszahlung außerhalb einer Session buchen
+      (z.B. Nachschuss oder Entnahme) — je Bereich.</p>
+    <div class="btn-row" id="rollSettingsRow" style="margin-bottom:18px">
+      ${TYPE_KEYS.map((k) => `<button class="btn" data-roll="${k}">${TYPES[k].em} ${esc(TYPES[k].label)}</button>`).join('')}
+    </div>
     <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Datensicherung</div>
     <p class="hint" style="margin:8px 0 12px">Deine Daten liegen nur in diesem Browser.
@@ -1583,6 +2293,10 @@ function openSettings() {
   });
 
   $('#btnStart').onclick = () => openStartBankroll(false);
+  $('#rollSettingsRow').onclick = (e) => {
+    const b = e.target.closest('[data-roll]'); if (!b) return;
+    openBankroll(b.dataset.roll);
+  };
   $('#btnExport').onclick = exportBackup;
   $('#btnImport').onclick = () => $('#fileImport').click();
   $('#fileImport').onchange = (e) => importBackup(e.target.files[0]);
@@ -2145,7 +2859,6 @@ function wire() {
   document.body.addEventListener('click', (e) => {
     const n = e.target.closest('[data-nav]'); if (n) { nav(n.dataset.nav); return; }
     const r = e.target.closest('[data-sid]'); if (r) { editSession(r.dataset.sid); return; }
-    const b = e.target.closest('[data-roll]'); if (b) { openBankroll(b.dataset.roll); return; }
     const p = e.target.closest('[data-player]'); if (p) { openPlayer(p.dataset.player); return; }
   });
   $('#btnNew').onclick = () => (db.live ? openLive() : newSession());
@@ -2155,6 +2868,7 @@ function wire() {
   $('#sheetCancel').onclick = closeSheet;
   $('#scrim').onclick = closeSheet;
   $('#sheetSave').onclick = () => sheetSaveFn && sheetSaveFn();
+  wireSheetSwipe();
 
   const seg = (id, set) => $(id).addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -2165,7 +2879,7 @@ function wire() {
   seg('#filterSeg', (k) => { filterKey = k; renderSessions(); });
   // Ort und Stakes gehören zum Bereich — beim Wechsel würden sie sonst
   // weiterfiltern und die neue Auswahl leer aussehen lassen.
-  seg('#statSeg', (k) => { statKey = k; statF.loc = ''; statF.stakes = ''; renderStats(); });
+  seg('#statSeg', (k) => { statKey = k; statF.loc = []; statF.stakes = []; renderStats(); });
   $('#statFilterBtn').onclick = openStatFilter;
   $('#statFilterClear').onclick = () => { statF = statFilterBlank(); renderStats(); toast('Filter zurückgesetzt'); };
   seg('#playerSeg', (k) => { playerSort = k; renderPlayers(); });

@@ -205,6 +205,82 @@
   --h2-size:11.5px; --h2-track:.16em; --h2-weight:600;
 }
 
+/* SUNSET — warmes Dunkel, Bernstein/Koralle als Akzent. Ergänzt Midnight
+   (kühl) um eine warme dunkle Variante.
+   Tabbar: flacher Rand, warmer Leuchtstrich unter dem aktiven Symbol. */
+:root[data-theme="sunset"]{
+  color-scheme:dark;
+  --bg:#1c1210; --bg-elev:#241713;
+  --surface:#2a1a15; --surface-2:#33211a; --surface-3:#3d2820;
+  --line:#4a2f24; --line-soft:#3a2419;
+  --text:#f5e9df; --text-2:#d1b3a0; --muted:#a68872;
+  --accent:#ff9452; --accent-2:#ff9452;
+  --accent-soft:#3a2414; --accent-line:#7a4726; --on-accent:#1c1210;
+  --up:#5ed68a; --down:#ff6b6b; --warn:#ffbb54;
+
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 8px 24px rgba(0,0,0,.5);
+  --shadow-pop:0 12px 34px rgba(0,0,0,.6);
+  --scrim:rgba(10,5,3,.7);
+  --grip:#5a4033;
+  --focus:rgba(255,148,82,.4);
+
+  --live-bg:#3a2414; --live-line:#7a4726; --live-sub:#e0b896;
+
+  --pill-cash-bg:#1f3323; --pill-cash-fg:#7be0a0;
+  --pill-mtt-bg:#3a2f12;  --pill-mtt-fg:#f0c765;
+  --pill-casino-bg:#3a1a30; --pill-casino-fg:#e79bdb;
+
+  --card-face:#f7ece0; --card-edge:#f7ece0; --card-ink:#1c1210; --card-ink-red:#c23b2e;
+  --seg-thumb:#3d2820;
+
+  --toast-bg:#f5e9df; --toast-fg:#241713;
+  --tabbar-bg:rgba(28,18,16,.88); --tabbar-line:#3a2419;
+  --fab-bg:linear-gradient(160deg,#ffb073,#ff8a3d); --fab-ink:#241713;
+  --fab-shadow:0 6px 18px rgba(255,148,82,.4);
+
+  --r-xs:8px; --r-sm:13px; --r:17px; --r-lg:21px; --r-xl:27px;
+}
+
+/* BLOSSOM — sanftes Hell, Rosé/Violett als Akzent, weichere Rundungen.
+   Ergänzt Daylight (neutral-flach) um einen weicheren hellen Stil.
+   Tabbar: flacher Rand, weiche Akzent-Pille hinter dem aktiven Symbol. */
+:root[data-theme="blossom"]{
+  color-scheme:light;
+  --bg:#faf3f2; --bg-elev:#f5ebe9;
+  --surface:#fff; --surface-2:#fbf1f0; --surface-3:#f5e4e2;
+  --line:#f0dcda; --line-soft:#f6e8e6;
+  /* wie bei Daylight ist --muted hier der kritische Wert — gegen --bg-elev
+     geprüft, dort ist der Abstand am kleinsten. */
+  --text:#241419; --text-2:#5e3c47; --muted:#6b4d55;
+  --accent:#c4447a; --accent-2:#c4447a;
+  --accent-soft:#fbe4ee; --accent-line:#f0b8d0; --on-accent:#fff;
+  --up:#128a52; --down:#cc3348; --warn:#a8650f;
+
+  --shadow-1:0 1px 2px rgba(60,20,30,.06);
+  --shadow-2:0 6px 20px rgba(60,20,30,.1);
+  --shadow-pop:0 14px 40px rgba(60,20,30,.18);
+  --scrim:rgba(40,20,28,.42);
+  --grip:#d9c0c6;
+  --focus:rgba(196,68,122,.3);
+
+  --live-bg:#fbe4ee; --live-line:#f0b8d0; --live-sub:#8a3f60;
+
+  --pill-cash-bg:#e1f5e8; --pill-cash-fg:#0f7a45;
+  --pill-mtt-bg:#fbeed7;  --pill-mtt-fg:#8a6512;
+  --pill-casino-bg:#f7e2f0; --pill-casino-fg:#95368a;
+
+  --card-face:#fff; --card-edge:#e8cfd6; --card-ink:#241419; --card-ink-red:#c4447a;
+  --seg-thumb:#fff;
+
+  --toast-bg:#241419; --toast-fg:#faf0ee;
+  --tabbar-bg:rgba(255,255,255,.9); --tabbar-line:#f0dcda;
+  --fab-bg:var(--accent); --fab-ink:#fff; --fab-shadow:0 6px 16px rgba(196,68,122,.35);
+
+  --r-xs:8px; --r-sm:12px; --r:16px; --r-lg:20px; --r-xl:24px;
+  --h2-track:.05em; --h2-case:none;
+}
+
 /* ── 3. Basis ───────────────────────────────────────────────── */
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -300,9 +376,7 @@ main{padding:0 var(--pad) 28px}
 .roll{
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:12px 11px;text-align:left;box-shadow:var(--shadow-1);
-  transition:transform var(--fast) var(--ease),background var(--fast);
 }
-.roll:active{transform:scale(.975);background:var(--surface-2)}
 .roll-name{
   font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;
   font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -351,6 +425,8 @@ main{padding:0 var(--pad) 28px}
 .pill.cash{background:var(--pill-cash-bg);color:var(--pill-cash-fg)}
 .pill.mtt{background:var(--pill-mtt-bg);color:var(--pill-mtt-fg)}
 .pill.casino{background:var(--pill-casino-bg);color:var(--pill-casino-fg)}
+.row-thumb{flex:none;width:40px;height:40px;border-radius:var(--r-sm);object-fit:cover;
+  border:1px solid var(--line)}
 .row-main{flex:1;min-width:0}
 .row-t{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row-s{font-size:12px;color:var(--muted);margin-top:2px;
@@ -456,6 +532,24 @@ main{padding:0 var(--pad) 28px}
 :root[data-theme="neon"] .tabbar button.on svg{filter:drop-shadow(0 0 7px var(--accent))}
 :root[data-theme="neon"] .tabbar button{text-transform:uppercase;letter-spacing:.08em;font-size:9px}
 
+/* Sunset: warmer Leuchtstrich unter dem aktiven Symbol */
+:root[data-theme="sunset"] .tabbar{
+  background:linear-gradient(180deg,#2a1a15,#1c1210);
+  box-shadow:0 -6px 20px rgba(0,0,0,.5);
+}
+:root[data-theme="sunset"] .tabbar button.on::before{
+  content:'';position:absolute;bottom:2px;left:50%;margin-left:-14px;
+  width:28px;height:3px;border-radius:3px;
+  background:var(--accent);box-shadow:0 0 14px rgba(255,148,82,.75);
+}
+
+/* Blossom: weiche Akzent-Pille hinter dem aktiven Symbol, Leiste bleibt flach */
+:root[data-theme="blossom"] .tabbar{box-shadow:0 -1px 0 var(--tabbar-line)}
+:root[data-theme="blossom"] .tabbar button.on::before{
+  content:'';position:absolute;top:4px;width:44px;height:28px;
+  border-radius:var(--r-lg);background:var(--accent-soft);
+}
+
 /* ── Sheet ──────────────────────────────────────────────────── */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;
   -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:fade .18s ease}
@@ -524,6 +618,62 @@ fieldset{border:0;padding:0;margin:0}
 }
 .typepick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
 .typepick .em{font-size:22px}
+
+/* ── Session-Wizard ─────────────────────────────────────────── */
+.wiz-steps{display:flex;justify-content:center;gap:6px;margin-bottom:20px}
+.wiz-dot{width:7px;height:7px;border-radius:50%;background:var(--line);transition:background var(--fast)}
+.wiz-dot.on{background:var(--accent);width:18px;border-radius:var(--r-pill)}
+.wiz-dot.done{background:var(--accent-line)}
+.wiz-typepick{grid-template-columns:1fr;gap:10px;margin-top:4px}
+.wiz-typepick button{flex-direction:row;justify-content:flex-start;gap:12px;padding:18px 16px}
+.wiz-typepick .em{font-size:26px;flex:none}
+
+/* Die Frage des Schritts — pro Seite steht genau eine da, deshalb darf sie
+   die Rolle der Überschrift übernehmen. */
+.wiz-q{font-family:var(--font-display);font-size:18.5px;font-weight:650;
+  line-height:1.32;margin:0 2px 16px}
+
+/* Zweizeilige Auswahl (Live / nachträglich) */
+.wiz-opt{display:flex;flex-direction:column;gap:3px;text-align:left;min-width:0}
+.wiz-opt b{font-size:14.5px;font-weight:650}
+.wiz-opt small{font-size:11.5px;color:var(--muted);font-weight:500;line-height:1.4}
+
+/* Auswahl als Chips: ein Tipp genügt, um weiterzukommen */
+.chippick{display:flex;flex-wrap:wrap;gap:8px}
+.chippick button{
+  background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r-pill);
+  padding:11px 16px;font-size:14.5px;font-weight:600;color:var(--text);
+  transition:border-color var(--fast),background var(--fast),transform var(--fast) var(--ease);
+}
+.chippick button:active{transform:scale(.96)}
+.chippick button.on{border-color:var(--accent);background:var(--accent-soft)}
+.chippick .chip-add{color:var(--muted);font-weight:550}
+
+/* Zusammenfassung am Ende — jede Zeile führt zurück zu ihrem Schritt */
+.wiz-sum{display:flex;flex-direction:column;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.wiz-sum-row{
+  display:flex;align-items:center;gap:10px;padding:12px 14px;text-align:left;
+  background:none;border-bottom:1px solid var(--line);
+  transition:background var(--fast);
+}
+.wiz-sum-row:last-child{border-bottom:0}
+.wiz-sum-row:active{background:var(--surface-2)}
+.wiz-sum-row .k{flex:none;font-size:12px;color:var(--muted);font-weight:550;min-width:36%}
+.wiz-sum-row .v{flex:1;min-width:0;font-size:14px;font-weight:600;text-align:right;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Nicht „.empty" — das ist schon der Hinweis für leere Listen (s.o.) und
+   brächte hier seine 30px Innenabstand mit. */
+.wiz-sum-row .v.unset{color:var(--muted);font-weight:500}
+.wiz-sum-row .ed{flex:none;font-size:12px;color:var(--muted)}
+
+/* ── Foto-Anhang ────────────────────────────────────────────── */
+.photofield{margin-top:2px}
+.photofield-prev{position:relative;margin-bottom:8px}
+.photofield-prev img{width:100%;max-height:220px;object-fit:cover;border-radius:var(--r);
+  border:1px solid var(--line);display:block}
+.photofield-prev .link{position:absolute;right:8px;bottom:8px;
+  background:var(--scrim);color:#fff;padding:5px 11px;border-radius:var(--r-pill);font-size:12px}
 
 /* Eingabefeld, das unter einem Auswahlfeld aufklappt („＋ Neuer Ort") —
    rückt leicht ein, damit es sichtbar zu der Auswahl darüber gehört. */
@@ -690,6 +840,10 @@ fieldset{border:0;padding:0;margin:0}
   --p-accent:#d6ad5c;--p-tab:#132a1f;--p-r:9px;--p-tabr:0}
 .t-neon{--p-bg:#06070c;--p-card:#0e111b;--p-line:#232b3e;--p-text:#e6f1ff;
   --p-accent:#1fd9d9;--p-tab:#0b0d15;--p-r:3px;--p-tabr:0}
+.t-sunset{--p-bg:#1c1210;--p-card:#2a1a15;--p-line:#4a2f24;--p-text:#f5e9df;
+  --p-accent:#ff9452;--p-tab:#241713;--p-r:9px;--p-tabr:0}
+.t-blossom{--p-bg:#faf3f2;--p-card:#fff;--p-line:#f0dcda;--p-text:#2c1a20;
+  --p-accent:#c4447a;--p-tab:#fff;--p-r:8px;--p-tabr:0}
 
 /* ── Breitere Bildschirme ───────────────────────────────────── */
 @media(min-width:560px){
