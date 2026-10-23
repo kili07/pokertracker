@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -559,6 +559,7 @@ function openPlayer(id) {
   `, () => {
     readPlayerForm(p); save(); closeSheet(); render(); toast('Profil gespeichert');
   });
+  sheetKind = 'player:' + p.id;
 
   // Spielertyp ist einfach-, Merkmale sind mehrfach-Auswahl
   $('#pl_style').onclick = (e) => {
@@ -636,9 +637,10 @@ function newPlayerSheet() {
 let statKey = 'all';
 
 /* Zusätzliche Filter über der Bereichsauswahl. Sie greifen alle gleichzeitig,
-   lassen sich also frei kombinieren. Bewusst nur im Arbeitsspeicher: eine
+   lassen sich also frei kombinieren. Bewusst nicht im Datensatz: eine
    vergessene Einstellung, die nach Tagen noch die Zahlen beschneidet, wäre
-   irreführender als der kleine Aufwand, sie neu zu setzen. */
+   irreführender als der kleine Aufwand, sie neu zu setzen. Ein Neuladen
+   übersteht sie trotzdem (siehe saveResume) — nur ein frischer Start nicht. */
 const RANGES = {
   all:  { label: 'Alles',      days: 0 },
   d30:  { label: '30 Tage',    days: 30 },
@@ -936,9 +938,19 @@ function breakdownPlayers(list) {
 
 /* ── Sheet-System ───────────────────────────────────────────── */
 let sheetSaveFn = null;
+/* Was gerade offen ist, damit ein Neuladen es wieder aufmachen kann —
+   'wiz', 'live', 'settings', 'player:<id>', 'bankroll:<art>' oder null
+   (siehe restoreSheet). Die Öffner setzen es direkt nach openSheet. */
+let sheetKind = null;
 
-function openSheet(title, html, saveFn, saveLabel) {
+/** Formulare füllen den ganzen Bildschirm — ein Tipp daneben oder ein
+    verrutschter Wisch soll nicht die halbe Eingabe wegwerfen. Nur kurze
+    Rückfragen (`compact`) bleiben ein Sheet von unten; sie lassen außerdem
+    `sheetKind` stehen, weil sie über dem eigentlichen Formular liegen. */
+function openSheet(title, html, saveFn, saveLabel, compact) {
   armBack();                              // Zurück soll das Sheet schließen, nicht die App
+  if (!compact) sheetKind = null;
+  $('#sheet').classList.toggle('full', !compact);
   $('#sheetTitle').textContent = title;
   $('#sheetBody').innerHTML = html;
   $('#sheetBody').onclick = null;         // Handler des vorherigen Sheets verwerfen
@@ -952,6 +964,7 @@ function openSheet(title, html, saveFn, saveLabel) {
   $('#sheetBody').scrollTop = 0;
 }
 function closeSheet() {
+  sheetKind = null;
   $('#sheet').classList.add('hidden');
   $('#scrim').classList.add('hidden');
   resetSheetDrag();                       // Reste einer Wischgeste abräumen
@@ -985,6 +998,7 @@ function wireSheetSwipe() {
   sheet.addEventListener('touchstart', (e) => {
     armed = active = false;
     if (e.touches.length !== 1 || sheet.classList.contains('hidden')) return;
+    if (sheet.classList.contains('full')) return;   // Vollbild: nur über Abbrechen/Zurück
     if (e.target.closest('input,select,textarea')) return;
     if (body.contains(e.target) && body.scrollTop > 0) return;
     y0 = lastY = e.touches[0].clientY;
@@ -1053,7 +1067,7 @@ function askSheet(title, text, okLabel, onOk, back, danger) {
     <p class="dlg-t">${esc(text)}</p>
     <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block" id="dlgOk">${esc(okLabel)}</button>
     <button class="btn btn-block" id="dlgNo" style="margin-top:8px">Abbrechen</button>
-  `, null);
+  `, null, null, true);
   const zurueck = () => (back ? back() : closeSheet());
   $('#dlgOk').onclick = onOk;
   $('#dlgNo').onclick = zurueck;
@@ -1064,7 +1078,7 @@ function infoSheet(title, text, back) {
   openSheet(title, `
     <p class="dlg-t">${esc(text)}</p>
     <button class="btn btn-primary btn-block" id="dlgOk">Verstanden</button>
-  `, null);
+  `, null, null, true);
   const zurueck = () => (back ? back() : closeSheet());
   $('#dlgOk').onclick = zurueck;
   $('#sheetCancel').onclick = zurueck;
@@ -1076,7 +1090,7 @@ function askText(title, label, opts, onOk, back) {
   openSheet(title, `
     <label>${esc(label)}<input id="dlg_in" ${opts.numeric ? 'type="number" inputmode="decimal" step="any"' : 'autocomplete="off"'}
       placeholder="${esc(opts.placeholder || '')}" value="${esc(opts.value == null ? '' : opts.value)}"></label>
-  `, () => onOk($('#dlg_in').value), opts.okLabel || 'Übernehmen');
+  `, () => onOk($('#dlg_in').value), opts.okLabel || 'Übernehmen', true);
   if (back) $('#sheetCancel').onclick = back;
   const inp = $('#dlg_in');
   inp.focus(); inp.select && inp.select();
@@ -1477,6 +1491,7 @@ function openWizardCore() {
     wiz.step += 1;
     openWizardStep();
   }, 'Weiter');
+  sheetKind = 'wiz';
   wirePick('f_location');
   wirePick('f_stakes');
   if (wiz.mode === 'live') {
@@ -1504,6 +1519,7 @@ function openWizardDetails() {
       ${wiz.mode === 'edit' ? '<button type="button" class="btn btn-danger btn-block" id="btnDelete">Session löschen</button>' : ''}
     </div>
   `, () => saveWizard(), 'Sichern');
+  sheetKind = 'wiz';
   wirePhotoField(wiz.data.photo);
   $('#f_tags').onclick = (e) => {
     const b = e.target.closest('[data-tag]'); if (!b) return;
@@ -1911,6 +1927,7 @@ function openWizPage() {
     <div class="wiz-q">${S.q()}</div>
     ${S.html()}
   `, S.choice ? null : (S.onNext || wizNext), (S.next ? S.next() : 'Weiter'));
+  sheetKind = 'wiz';
 
   // Nur ganz am Anfang bricht es wirklich ab — aus einer von der
   // Zusammenfassung angesprungenen Seite geht es dorthin zurück.
@@ -2022,6 +2039,7 @@ function openLive() {
     <button class="btn btn-primary btn-block" id="lvEnd">Session beenden</button>
     <button class="btn btn-danger btn-block" id="lvCancel" style="margin-top:8px">Verwerfen</button>
   `, null);
+  sheetKind = 'live';
 
   $('#lvEdit').onclick = () => editLiveDetails();
   $('#lvOpp').onclick = (e) => {
@@ -2107,6 +2125,7 @@ function openBankroll(k) {
           <button class="link" data-txdel="${t.id}" style="padding:0 0 0 8px">✕</button></span>
       </div>`).join('') : '<div class="empty" style="padding:14px">Keine Buchungen</div>'}</div>
   `, null);
+  sheetKind = 'bankroll:' + k;
 
   const book = (sign) => {
     const a = num($('#tx_amt').value);
@@ -2276,6 +2295,7 @@ function openSettings() {
 
     save(); closeSheet(); render(); toast('Gespeichert');
   });
+  sheetKind = 'settings';
 
   TYPE_KEYS.forEach((k) => wirePick('setDefLoc_' + k));
   wirePick('setDefStakes');
@@ -2826,7 +2846,10 @@ function leaveApp() {
 }
 
 function wireBack() {
-  pushGuard();
+  // Nach einem Neuladen steht der Wächter vom letzten Mal noch obenauf —
+  // ein zweiter würde Zurück einen Druck verschlucken lassen.
+  if (history.state && history.state.pt === 'guard') guardUp = true;
+  else pushGuard();
   window.addEventListener('popstate', () => {
     guardUp = false;
 
@@ -2854,6 +2877,112 @@ function wireBack() {
   });
 }
 
+/* ── Neuladen übersteht den Stand ───────────────────────────────
+   Ohne das landet ein Neuladen (oder das Handy, das die App im Hintergrund
+   beendet hat) immer auf der Übersicht, und ein halb ausgefülltes Formular
+   ist weg. Beim Verlassen der Seite wandert deshalb nach sessionStorage,
+   wo man war: Ansicht, Auswahlen, Scrollstand und das offene Sheet samt
+   allem, was darin eingetippt oder angetippt ist.
+
+   sessionStorage statt localStorage mit Absicht: es gilt nur für diesen
+   Tab bzw. diesen App-Lauf. Wer die App morgen frisch öffnet, startet wie
+   gewohnt auf der Übersicht. */
+const RESUME_KEY = 'pt-resume';
+
+/** Kennung einer Chip-Taste — je nach Auswahl steckt sie in einem anderen data-Feld. */
+const chipKey = (b) => b.dataset.val ?? b.dataset.tag ?? b.dataset.pid ?? b.dataset.st;
+
+function saveResume() {
+  const st = { view, chartKey, filterKey, playerSort, statKey, statF, scroll: window.scrollY, sheet: null };
+  if (sheetKind && !$('#sheet').classList.contains('hidden')) {
+    const body = $('#sheetBody'), vals = {}, on = {};
+    $$('input[id],select[id],textarea[id]', body).forEach((el) => {
+      if (el.type !== 'file') vals[el.id] = el.value;
+    });
+    $$('[id]', body).forEach((box) => {
+      const chips = $$(':scope > button', box).filter((b) => chipKey(b) != null);
+      if (chips.length) on[box.id] = chips.filter((b) => b.classList.contains('on')).map(chipKey);
+    });
+    st.sheet = { kind: sheetKind, vals, on, top: body.scrollTop };
+    // Das Foto steht nur in wizPhoto, solange seine Seite offen ist.
+    if (sheetKind === 'wiz') st.sheet.wiz = Object.assign({}, wiz,
+      { data: $('#f_photo') ? Object.assign({}, wiz.data, { photo: wizPhoto }) : wiz.data });
+  }
+  try { sessionStorage.setItem(RESUME_KEY, JSON.stringify(st)); }
+  catch (e) {
+    // Zu groß (Foto) — dann eben ohne Bild, der Rest ist wichtiger.
+    if (!st.sheet || !st.sheet.wiz) return;
+    st.sheet.wiz.data = Object.assign({}, st.sheet.wiz.data, { photo: null });
+    try { sessionStorage.setItem(RESUME_KEY, JSON.stringify(st)); } catch (e2) { /* egal */ }
+  }
+}
+
+function readResume() {
+  try { return JSON.parse(sessionStorage.getItem(RESUME_KEY)); } catch (e) { return null; }
+}
+
+/** Auswahlen der Ansichten zurückholen — vor nav(), das gleich damit zeichnet. */
+function applyResume(st) {
+  if (!st) return;
+  const mark = (id, k) => $$('button', $(id)).forEach((b) => b.classList.toggle('on', b.dataset.k === k));
+  if (st.chartKey) { chartKey = st.chartKey; mark('#chartSeg', chartKey); }
+  if (st.filterKey) { filterKey = st.filterKey; mark('#filterSeg', filterKey); }
+  if (st.playerSort) { playerSort = st.playerSort; mark('#playerSeg', playerSort); }
+  if (st.statKey) { statKey = st.statKey; mark('#statSeg', statKey); }
+  if (st.statF) statF = Object.assign(statFilterBlank(), st.statF);
+}
+
+/** Öffnet das Sheet von vorhin wieder und trägt die Eingaben ein.
+    false, wenn es nicht mehr passt (Session gelöscht, Uhr gestoppt, …). */
+function restoreSheet(sh) {
+  if (!sh || !sh.kind) return false;
+  const i = sh.kind.indexOf(':');
+  const kind = i < 0 ? sh.kind : sh.kind.slice(0, i), id = i < 0 ? '' : sh.kind.slice(i + 1);
+
+  if (kind === 'wiz') {
+    const w = sh.wiz;
+    if (!w || !w.data) return false;
+    if ((w.mode === 'live' || w.mode === 'finish') && !db.live) return false;
+    if (w.mode === 'edit' && !db.sessions.some((x) => x.id === w.data.id)) return false;
+    wiz = w;
+    wizPhoto = w.data.photo || null;
+    openWizardStep();
+  } else if (kind === 'live') {
+    if (!db.live) return false;
+    openLive();
+  } else if (kind === 'player') {
+    if (!playerById(id)) return false;
+    openPlayer(id);
+  } else if (kind === 'bankroll') {
+    if (!TYPES[id]) return false;
+    openBankroll(id);
+  } else if (kind === 'settings') {
+    openSettings();
+  } else return false;
+
+  const body = $('#sheetBody');
+  Object.entries(sh.on || {}).forEach(([bid, keys]) => {
+    const box = body.querySelector('#' + CSS.escape(bid)); if (!box) return;
+    $$(':scope > button', box).forEach((b) => {
+      const k = chipKey(b);
+      if (k != null) b.classList.toggle('on', keys.includes(k));
+    });
+  });
+  Object.entries(sh.vals || {}).forEach(([fid, v]) => {
+    const el = body.querySelector('#' + CSS.escape(fid));
+    if (el && el.type !== 'file') el.value = v;
+  });
+  // Eigene Werte („＋ Neuer Ort" …) brauchen ihr aufgeklapptes Textfeld wieder.
+  $$('.pick-new', body).forEach((inp) => {
+    const sel = $('#' + inp.id + '_sel', body), box = $('#' + inp.id + '_box', body);
+    const on = box && $('button.on', box);
+    const neu = sel ? sel.value === '__new' : !!(on && on.dataset.val === '__new');
+    inp.classList.toggle('hidden', !neu);
+  });
+  body.scrollTop = sh.top || 0;
+  return true;
+}
+
 /* ── Verdrahtung ────────────────────────────────────────────── */
 function wire() {
   document.body.addEventListener('click', (e) => {
@@ -2866,7 +2995,9 @@ function wire() {
   $('#btnSettings').onclick = openSettings;
   $('#liveOpen').onclick = openLive;
   $('#sheetCancel').onclick = closeSheet;
-  $('#scrim').onclick = closeSheet;
+  // Wie Abbrechen, nicht closeSheet: eine Rückfrage über einem Formular
+  // führt so zum Formular zurück, statt alles zuzuklappen.
+  $('#scrim').onclick = () => $('#sheetCancel').click();
   $('#sheetSave').onclick = () => sheetSaveFn && sheetSaveFn();
   wireSheetSwipe();
 
@@ -2893,9 +3024,18 @@ applyTheme(db.theme);
 wire();
 wireBack();
 renderSlots();
-nav('home');
-if (db.live) openLive();
-else if (!db.setup && !db.sessions.length && !db.txns.length) openStartBankroll(true);
+const resume = readResume();
+applyResume(resume);
+nav(resume && TITLES[resume.view] ? resume.view : 'home');
+if (resume) window.scrollTo(0, resume.scroll || 0);
+if (!(resume && restoreSheet(resume.sheet))) {
+  // Nach einem Neuladen mit zugeklapptem Sheet bleibt es zu — auch die
+  // laufende Session springt dann nicht von selbst wieder auf.
+  if (db.live && !resume) openLive();
+  else if (!db.setup && !db.sessions.length && !db.txns.length) openStartBankroll(true);
+}
+window.addEventListener('pagehide', saveResume);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveResume(); });
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 wireUpdates();
