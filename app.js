@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -26,13 +26,15 @@ const THEMES = {
 const THEME_KEYS = Object.keys(THEMES);
 
 /* Designs. „Klassisch" ist die bisherige Oberfläche mit den Farbschemata oben.
-   Kurve und Monatsblatt (aus dem Entwurf „PWA Startseiten") bringen eigene
+   Die anderen vier (Entwürfe A bis D aus „PWA Startseiten") bringen eigene
    Farben, Schriften und eine eigene Übersicht mit — das Farbschema ruht dann.
    Wer nichts umstellt, bleibt klassisch. `bar` muss --bg in style.css
    entsprechen, wie bei THEMES. */
 const UI_KEY = 'pokertracker.ui';
 const UIS = {
   classic: { label: 'Klassisch',   note: 'Bisheriges Design, mit Farbschema', bar: null },
+  chips:   { label: 'Filz und Chips', note: 'Tischgrün, Bankroll als Chipstapel', bar: '#0e4d36' },
+  playcard:{ label: 'Spielkarte',  note: 'Hell, Bankroll als Kartenindex',    bar: '#e4e2dc' },
   curve:   { label: 'Kurve',       note: 'Dunkel, Verlauf im Mittelpunkt',    bar: '#111315' },
   month:   { label: 'Monatsblatt', note: 'Hell, Kalender mit Spieltagen',     bar: '#f7f6f2' },
 };
@@ -392,6 +394,8 @@ function renderHome() {
   const alt = db.ui !== 'classic';
   $('#homeClassic').classList.toggle('hidden', alt);
   $('#homeAlt').classList.toggle('hidden', !alt);
+  if (db.ui === 'chips') return renderHomeChips();
+  if (db.ui === 'playcard') return renderHomeCard();
   if (db.ui === 'curve') return renderHomeCurve();
   if (db.ui === 'month') return renderHomeMonth();
   renderBackupHint();
@@ -494,6 +498,94 @@ function altRolls(klass) {
 /** Großer Knopf: neue Session, bei laufender Session deren Ansicht. */
 function altStartBtn(klass, label) {
   return `<button class="${klass}" data-act="new">${db.live ? 'Laufende Session öffnen' : label}</button>`;
+}
+
+/** Datum als „Sa 7.11." für die Sessionlisten von Filz und Spielkarte. */
+const WD_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const dateShort = (iso) => { const d = new Date(iso); return `${WD_SHORT[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`; };
+
+/** Letzte Sessions als schlichte Zeilen (Datum, Beschreibung, Ergebnis). */
+function altRecent(prefix, emptyText) {
+  const recent = [...db.sessions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
+  return `<div class="${prefix}-recent">
+      <div class="alt-recent-head"><h2>Letzte Sessions</h2><button class="link" data-nav="sessions">Alle</button></div>
+      ${recent.length ? recent.map((s) => `<button class="alt-row" data-sid="${s.id}">
+          <span class="alt-date">${dateShort(s.date)}</span>
+          <span class="alt-desc">${altLine(s)}</span>
+          <span class="alt-val ${profit(s) < 0 ? 'down' : ''}">${signed(profit(s))}</span>
+        </button>`).join('') : `<div class="empty">${emptyText}</div>`}
+    </div>`;
+}
+
+/* ── Filz und Chips ────────────────────────────────────────── */
+/** Wert eines Chips: 100 € wie im Entwurf, bei großen Bankrolls die nächste
+    runde Stufe, damit der höchste Stapel höchstens 15 Chips hat. */
+function chipUnit(max) {
+  const steps = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000, 100000];
+  return steps.find((u) => max / u <= 15) || Math.ceil(max / 15 / 100000) * 100000;
+}
+
+function renderHomeChips() {
+  const now = new Date();
+  const list = monthSessions(now.getFullYear(), now.getMonth());
+  const mp = list.reduce((a, s) => a + profit(s), 0);
+  const total = bankroll('all');
+  const unit = chipUnit(Math.max(0, ...TYPE_KEYS.map((k) => bankroll(k))));
+
+  const stacks = TYPE_KEYS.map((k) => {
+    const b = bankroll(k);
+    // Angebrochene Chips aufrunden: auch 30 € sollen sichtbar etwas sein.
+    const n = b > 0 ? Math.max(1, Math.round(b / unit)) : 0;
+    return `<button class="fz-roll" data-roll-open="${k}">
+        <span class="fz-stack fz-${k}${n ? '' : ' fz-zero'}" role="img"
+          aria-label="${n ? `Stapel aus ${n} ${n === 1 ? 'Chip' : 'Chips'}` : 'Kein Chip'}" style="height:${n ? n * 11 : 4}px"></span>
+        <span class="fz-k">${TYPES[k].label}</span>
+        <span class="fz-v ${b < 0 ? 'down' : ''}">${money(b)}</span>
+      </button>`;
+  }).join('');
+
+  $('#homeAlt').innerHTML = `
+    <div class="fz-head">
+      <span class="alt-k">Bankroll gesamt</span>
+      <span class="fz-big ${total < 0 ? 'down' : ''}">${money(total)}</span>
+      <span class="fz-sub">${dfMonthName.format(now)} <b class="${mp < 0 ? 'down' : ''}">${signed(mp)}</b> in ${plural(list.length, 'Session', 'Sessions')}</span>
+    </div>
+    <div class="notice hidden" id="backupNoteAlt"></div>
+    <div class="fz-rolls">${stacks}</div>
+    <div class="fz-hint">Ein Chip steht für ${money(unit)}. Stapel antippen, um ein- oder auszuzahlen.</div>
+    ${altStartBtn('fz-start', 'Session erfassen')}
+    ${altRecent('fz', 'Tippe auf „Session erfassen“ für Deine erste Session.')}`;
+  renderBackupHint($('#backupNoteAlt'));
+}
+
+/* ── Spielkarte ────────────────────────────────────────────── */
+/* Farbsymbole: Pik für Cash, Kreuz für Turnier, Karo (rot) für Casino. */
+const SUITS = {
+  cash: '<path d="M12 2C8 7 3 10 3 14.5A4.5 4.5 0 0 0 11 17c-.3 2-1 3.5-2.5 5h7c-1.5-1.5-2.2-3-2.5-5a4.5 4.5 0 0 0 8-2.5C21 10 16 7 12 2z"/>',
+  mtt: '<circle cx="12" cy="7" r="4.6"/><circle cx="6.6" cy="14" r="4.6"/><circle cx="17.4" cy="14" r="4.6"/><path d="M12 11c-.2 5.5-1 8.5-3 11h6c-2-2.5-2.8-5.5-3-11z"/>',
+  casino: '<path d="M12 2 20 12 12 22 4 12z"/>',
+};
+
+function renderHomeCard() {
+  const total = bankroll('all');
+  const idx = (total < 0 ? '−' : '') + nf0.format(Math.abs(Math.round(total)));
+  const corner = (hidden) => `<div class="pc-index${hidden ? ' pc-index-rot' : ''}"${hidden ? ' aria-hidden="true"' : ''}>
+      <span class="pc-num ${total < 0 ? 'down' : ''}">${idx}</span><span class="pc-lbl">Euro Bankroll</span></div>`;
+
+  $('#homeAlt').innerHTML = `
+    <div class="pc-card">
+      ${corner(false)}
+      <div class="pc-rows">${TYPE_KEYS.map((k) => `<button class="pc-row" data-roll-open="${k}">
+          <svg aria-hidden="true" class="pc-suit pc-suit-${k}" width="40" height="40" viewBox="0 0 24 24">${SUITS[k]}</svg>
+          <span class="pc-name">${TYPES[k].label}</span>
+          <span class="pc-val ${bankroll(k) < 0 ? 'down' : ''}">${money(bankroll(k))}</span>
+        </button>`).join('')}</div>
+      ${corner(true)}
+    </div>
+    <div class="notice hidden" id="backupNoteAlt"></div>
+    ${altStartBtn('pc-start', 'Session erfassen')}
+    ${altRecent('pc', 'Tippe auf „Session erfassen“ für Deine erste Session.')}`;
+  renderBackupHint($('#backupNoteAlt'));
 }
 
 /* ── Kurve ─────────────────────────────────────────────────── */
@@ -2473,8 +2565,8 @@ function openStartBankroll(first) {
 function openSettings() {
   openSheet('Einstellungen', `
     <div class="sec-title">Design</div>
-    <p class="hint" style="margin:8px 0 12px">Klassisch ist das bisherige Design. Kurve und
-      Monatsblatt ändern Übersicht, Schrift und Farben. Deine Daten bleiben dabei gleich.</p>
+    <p class="hint" style="margin:8px 0 12px">Klassisch ist das bisherige Design. Die anderen
+      ändern Übersicht, Schrift und Farben. Deine Daten bleiben dabei gleich.</p>
     <div class="themes" id="uiPick">
       ${UI_KEYS.map((k) => `
         <button class="theme-card${db.ui === k ? ' on' : ''}" data-ui-pick="${k}">

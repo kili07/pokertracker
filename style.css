@@ -292,6 +292,99 @@
 @font-face{font-family:"Archivo";src:url(fonts/archivo.woff2) format("woff2");
   font-weight:100 900;font-display:swap}
 
+@font-face{font-family:"Fraunces";src:url(fonts/fraunces.woff2) format("woff2");
+  font-weight:100 900;font-display:swap}
+@font-face{font-family:"Figtree";src:url(fonts/figtree.woff2) format("woff2");
+  font-weight:300 900;font-display:swap}
+@font-face{font-family:"DM Serif Display";src:url(fonts/dm-serif-display.woff2) format("woff2");
+  font-weight:400;font-display:swap}
+@font-face{font-family:"Public Sans";src:url(fonts/public-sans.woff2) format("woff2");
+  font-weight:100 900;font-display:swap}
+
+/* FILZ UND CHIPS — Tischgrün, Creme als Schrift- und Knopffarbe, Zahlen in
+   Fraunces. Gewinne bleiben cremefarben wie im Entwurf, Verluste lachsrot. */
+:root[data-theme="chips"]{
+  color-scheme:dark;
+  --bg:#0e4d36; --bg-elev:#0b432f;
+  --surface:#0a3d2b; --surface-2:#12583f; --surface-3:#1a6a4d;
+  --line:#3f7a62; --line-soft:#2a6650;
+  --text:#f3efe2; --text-2:#dfe8df; --muted:#c2d6c8;
+  --accent:#f3efe2; --accent-2:#f3efe2;
+  --accent-soft:#1a6a4d; --accent-line:#5e9a80; --on-accent:#0b3a29;
+  --up:#f3efe2; --down:#ffb4a8; --warn:#f6d38a;
+
+  --shadow-1:none;
+  --shadow-2:0 8px 24px rgba(0,0,0,.35);
+  --shadow-pop:0 12px 34px rgba(0,0,0,.45);
+  --scrim:rgba(3,20,13,.66);
+  --grip:#5e9a80;
+  --focus:rgba(243,239,226,.45);
+
+  --live-bg:#0a3d2b; --live-line:#3f7a62; --live-sub:#c2d6c8;
+
+  --pill-cash-bg:#5a2420; --pill-cash-fg:#ffd6cf;
+  --pill-mtt-bg:#1e2f6b;  --pill-mtt-fg:#dfe5ff;
+  --pill-casino-bg:#17171a; --pill-casino-fg:#f3efe2;
+
+  --card-face:#f3efe2; --card-edge:#f3efe2; --card-ink:#17171a; --card-ink-red:#c8392f;
+  --seg-thumb:#1a6a4d;
+
+  --toast-bg:#f3efe2; --toast-fg:#0b3a29;
+  --tabbar-bg:#0a3d2b; --tabbar-line:#0a3d2b; --tabbar-blur:0px;
+  --fab-bg:#f3efe2; --fab-ink:#0b3a29; --fab-shadow:none;
+
+  /* Chipfarben je Bereich, Streifen in Creme */
+  --fz-cash:#c8392f; --fz-mtt:#1e2f6b; --fz-casino:#17171a; --fz-stripe:#f3efe2;
+
+  --r-xs:6px; --r-sm:10px; --r:14px; --r-lg:18px; --r-xl:22px;
+  --font-ui:"Figtree",system-ui,sans-serif;
+  --font-display:"Fraunces",Georgia,serif;
+  --font-num:"Fraunces",Georgia,serif;
+  --h2-size:15px; --h2-track:0; --h2-case:none; --h2-weight:400;
+}
+
+/* SPIELKARTE — graues Tuch, weiße Karte, Schwarz und Kartenrot.
+   Gewinne schwarz, Verluste rot, wie Pik und Karo. */
+:root[data-theme="playcard"]{
+  color-scheme:light;
+  --bg:#e4e2dc; --bg-elev:#eceae5;
+  --surface:#fff; --surface-2:#f3f2ee; --surface-3:#e4e2dc;
+  --line:#b9b6ad; --line-soft:#d5d2ca;
+  --text:#17171a; --text-2:#33322e; --muted:#4a4841;
+  --accent:#17171a; --accent-2:#b3261e;
+  --accent-soft:#dcd9d2; --accent-line:#b9b6ad; --on-accent:#fff;
+  --up:#17171a; --down:#b3261e; --warn:#8a5a00;
+  --tab-mark:#b3261e;
+
+  --shadow-1:none;
+  --shadow-2:0 6px 20px rgba(23,23,26,.1);
+  --shadow-pop:0 14px 40px rgba(23,23,26,.18);
+  --scrim:rgba(23,23,26,.4);
+  --grip:#b9b6ad;
+  --focus:rgba(179,38,30,.3);
+
+  --live-bg:#fff; --live-line:#b9b6ad; --live-sub:#4a4841;
+
+  --pill-cash-bg:#ecebe6; --pill-cash-fg:#17171a;
+  --pill-mtt-bg:#ecebe6;  --pill-mtt-fg:#17171a;
+  --pill-casino-bg:#f6e3e1; --pill-casino-fg:#8f1e18;
+
+  --card-face:#fff; --card-edge:#b9b6ad; --card-ink:#17171a; --card-ink-red:#b3261e;
+  --seg-thumb:#fff;
+
+  --toast-bg:#17171a; --toast-fg:#fff;
+  --tabbar-bg:#fff; --tabbar-line:#b9b6ad; --tabbar-blur:0px;
+  --fab-bg:#17171a; --fab-ink:#fff; --fab-shadow:none;
+
+  --pc-suit-black:#17171a; --pc-suit-red:#b3261e;
+
+  --r-xs:6px; --r-sm:10px; --r:12px; --r-lg:16px; --r-xl:18px;
+  --font-ui:"Public Sans",system-ui,sans-serif;
+  --font-display:"DM Serif Display",Georgia,serif;
+  --font-num:"Public Sans",system-ui,sans-serif;
+  --h2-size:15px; --h2-track:0; --h2-case:none; --h2-weight:600;
+}
+
 /* KURVE — fast schwarz, Gold als einzige Akzentfarbe, Zahlen in Mono.
    Verluste in gedämpftem Lachs statt Alarmrot. */
 :root[data-theme="curve"]{
@@ -966,6 +1059,64 @@ fieldset{border:0;padding:0;margin:0}
 /* Topbar ohne Titel: nur das Zahnrad, deshalb flacher */
 :root[data-ui] .topbar{padding-bottom:4px}
 
+/* Gemeinsam: Kopf der Liste „Letzte Sessions" */
+.alt-recent-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+
+/* Filz und Chips */
+.fz-head{display:flex;flex-direction:column;gap:2px}
+.fz-big{font-family:"Fraunces",Georgia,serif;font-size:clamp(40px,15vw,60px);line-height:1;font-weight:800;
+  letter-spacing:-.02em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fz-sub{font-size:17px}
+.fz-sub b{font-weight:600}
+.fz-rolls{margin-top:22px;padding-bottom:14px;border-bottom:2px solid var(--text);
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:end}
+.fz-roll{border:0;background:transparent;padding:0;display:flex;flex-direction:column;align-items:flex-start;
+  gap:8px;text-align:left;min-width:0}
+.fz-stack{display:block;width:64px;max-width:100%;
+  background-image:repeating-linear-gradient(to top,transparent 0,transparent 9px,var(--bg) 9px,var(--bg) 11px),
+    repeating-linear-gradient(90deg,var(--chip) 0,var(--chip) 13px,var(--fz-stripe) 13px,var(--fz-stripe) 19px)}
+.fz-cash{--chip:var(--fz-cash)} .fz-mtt{--chip:var(--fz-mtt)} .fz-casino{--chip:var(--fz-casino)}
+.fz-stack.fz-zero{background:none;border-top:2px dashed var(--line);height:4px}
+.fz-k{font-size:15px}
+.fz-v{font-family:"Fraunces",Georgia,serif;font-size:clamp(19px,6vw,24px);font-weight:600;line-height:1;
+  white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.fz-hint{padding-top:8px;color:var(--muted);font-size:13px}
+.fz-start{margin-top:18px;height:56px;border:0;border-radius:28px;background:var(--accent);color:var(--on-accent);
+  font-size:18px;font-weight:600}
+.fz-recent,.pc-recent{margin-top:22px;display:flex;flex-direction:column}
+.alt-row{display:flex;align-items:center;gap:8px;min-height:52px;border:0;border-top:1px solid var(--line);
+  background:transparent;padding:0;text-align:left;width:100%}
+.alt-date{width:64px;flex:none;color:var(--muted);font-size:14px}
+.alt-desc{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alt-row .alt-val{flex:none;font-size:15px;font-weight:600}
+.fz-recent .alt-row{min-height:54px}
+.fz-recent .alt-row .alt-val{font-family:"Fraunces",Georgia,serif;font-size:20px}
+
+/* Spielkarte */
+/* DM Serif Display gibt es nur in einem Schnitt: Überschriften nicht fett
+   rechnen lassen, Zwischenüberschriften in Public Sans wie im Entwurf. */
+:root[data-theme="playcard"] h1,
+:root[data-theme="playcard"] .hero-value,
+:root[data-theme="playcard"] .live-clock{font-weight:400}
+:root[data-theme="playcard"] h2{font-family:var(--font-ui)}
+.pc-card{position:relative;margin-top:4px;min-height:400px;background:var(--surface);border:1px solid var(--line);
+  border-radius:18px;display:flex;flex-direction:column;justify-content:center;padding:84px 24px}
+.pc-index{position:absolute;left:18px;top:14px;display:flex;flex-direction:column;align-items:flex-start;line-height:1}
+.pc-index-rot{left:auto;top:auto;right:18px;bottom:14px;transform:rotate(180deg)}
+.pc-num{font-family:"DM Serif Display",Georgia,serif;font-size:40px;line-height:1;white-space:nowrap}
+.pc-lbl{font-size:14px;padding-top:2px}
+.pc-rows{display:flex;flex-direction:column}
+.pc-row{min-height:72px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;padding:0;
+  display:flex;align-items:center;gap:16px;text-align:left;min-width:0}
+.pc-row:last-child{border-bottom:0}
+.pc-suit{flex:none;fill:var(--pc-suit-black)}
+.pc-suit-casino{fill:var(--pc-suit-red)}
+.pc-name{flex:1;font-size:17px;min-width:0}
+.pc-val{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(22px,7.5vw,30px);white-space:nowrap}
+.pc-start{margin-top:16px;height:56px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);
+  font-size:18px;font-weight:600}
+.pc-recent .alt-recent-head h2{color:var(--text)}
+
 /* Kurve */
 .cv-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
 .cv-total,.cv-month{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -1064,13 +1215,22 @@ button.mb-day.sel{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text)}
 :root[data-ui] .tabbar button[data-nav] span{padding:4px 0;border-bottom:2px solid transparent;
   white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 :root[data-ui] .tabbar button.on{color:var(--text);font-weight:600}
-:root[data-ui] .tabbar button.on span{border-bottom-color:var(--accent)}
+:root[data-ui] .tabbar button.on span{border-bottom-color:var(--tab-mark,var(--accent))}
+:root[data-ui="playcard"] .tabbar button.on span{border-bottom-width:3px}
 :root[data-ui="month"] .tabbar button.on span{border-bottom-width:3px}
 :root[data-ui] .fab-tab svg{border-radius:var(--r-sm);width:40px;height:40px;padding:9px}
 
 /* Vorschau-Kacheln der Design-Auswahl (feste Farben, siehe .tprev) */
 .u-classic{--p-bg:#0b0e14;--p-card:#151b26;--p-line:#262f40;--p-text:#e8edf5;
   --p-accent:#4d8dff;--p-tab:#11161f;--p-r:7px;--p-tabr:6px}
+.u-chips{--p-bg:#0e4d36;--p-card:#0a3d2b;--p-line:#3f7a62;--p-text:#f3efe2;
+  --p-accent:#c8392f;--p-tab:#0a3d2b;--p-r:3px;--p-tabr:0}
+.u-playcard{--p-bg:#e4e2dc;--p-card:#fff;--p-line:#b9b6ad;--p-text:#17171a;
+  --p-accent:#b3261e;--p-tab:#fff;--p-r:6px;--p-tabr:0}
+/* Filz: Chipstapel; Spielkarte: Karte mit rotem Karo */
+.u-chips .tp-c{border:0;background:repeating-linear-gradient(90deg,#c8392f 0 8px,#f3efe2 8px 11px);
+  right:auto;width:30px;height:20px;top:36px;border-radius:0}
+.u-playcard .tp-a{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);border-radius:0}
 .u-curve{--p-bg:#111315;--p-card:#111315;--p-line:#2a2e33;--p-text:#eceae4;
   --p-accent:#f2b544;--p-tab:#111315;--p-r:2px;--p-tabr:0}
 .u-month{--p-bg:#f7f6f2;--p-card:#fff;--p-line:#dcd9d0;--p-text:#1a1a1a;

@@ -14,10 +14,10 @@
   try {
     var t = localStorage.getItem('pokertracker.theme');
     if (t) document.documentElement.dataset.theme = t;
-    /* Die Designs Kurve und Monatsblatt bringen ihre eigenen Farben mit und
+    /* Die Designs außer Klassisch bringen ihre eigenen Farben mit und
        stehen deshalb über dem Farbschema. Ohne Eintrag bleibt es klassisch. */
     var u = localStorage.getItem('pokertracker.ui');
-    if (u === 'curve' || u === 'month') {
+    if (u === 'chips' || u === 'playcard' || u === 'curve' || u === 'month') {
       document.documentElement.dataset.theme = u;
       document.documentElement.dataset.ui = u;
     }
