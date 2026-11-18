@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.5.0';
+const APP_VERSION = '2.5.1';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -654,27 +654,32 @@ function renderHomeCard() {
   /* Die Karte ist die ganze Startseite: keine Sessionliste, kein eigener
      Knopf (neue Session über ＋ in der Leiste). Der Hinweis zur Sicherung
      steht über der Karte, damit fitCard() ihn bei der Höhe mitrechnet.
-     Die drei Damen liegen als Stapel übereinander; Wischen blättert. */
+     Hinten liegt ein Stapel verdeckter Karten, offen ist nur die Dame des
+     gewählten Bereichs. Wischen wirft sie weg, dann wird die nächste
+     ausgeteilt. */
   $('#homeAlt').innerHTML = `${QUEEN_SVG}
     <div class="notice hidden" id="backupNoteAlt"></div>
     <div class="pc-card" id="pcCard" aria-roledescription="Kartenstapel" aria-label="Bankroll je Bereich, wischen zum Blättern">
-      <div class="pc-stack" id="pcStack">${TYPE_KEYS.map(face).join('')}</div>
+      <div class="pc-stack" id="pcStack">
+        <div class="pc-deck pc-deck-2" aria-hidden="true"></div>
+        <div class="pc-deck pc-deck-1" aria-hidden="true"></div>
+        ${TYPE_KEYS.map(face).join('')}
+      </div>
       <div class="pc-dots" role="tablist" aria-label="Bereich wählen">${TYPE_KEYS.map((k, i) =>
         `<button class="pc-dot" role="tab" data-card="${i}" aria-label="${TYPES[k].label}"></button>`).join('')}</div>
     </div>`;
   renderBackupHint($('#backupNoteAlt'));
-  placeCards(false);
+  showCard();
   wireCardSwipe();
 }
 
-/** Karten nach ihrem Platz im Stapel einordnen (0 = oben). */
-function placeCards() {
-  const n = TYPE_KEYS.length;
+/** Nur die Karte cardIdx offen zeigen, Punkte nachziehen. */
+function showCard() {
   $$('#pcStack .pc-face').forEach((f) => {
-    const pos = (Number(f.dataset.i) - cardIdx + n) % n;
-    f.dataset.pos = pos;
-    f.style.transform = '';
-    f.inert = pos !== 0;                 // nur die oberste Karte ist bedienbar
+    const on = Number(f.dataset.i) === cardIdx;
+    f.classList.toggle('is-top', on);
+    f.inert = !on;                       // nur die offene Karte ist bedienbar
+    f.style.transform = ''; f.style.opacity = '';
   });
   $$('#pcCard .pc-dot').forEach((d) => {
     const on = Number(d.dataset.card) === cardIdx;
@@ -683,39 +688,47 @@ function placeCards() {
   });
 }
 
-/** Zur Karte i blättern. dir > 0: oberste Karte fliegt nach links weg und
-    schiebt sich unten in den Stapel; dir < 0: die gesuchte Karte kommt von
-    rechts herein und legt sich oben auf. */
-function goCard(i, dir) {
+let cardBusy = false;
+let cardNext = null;     // während einer Animation angetippter Punkt, kommt danach dran
+const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Zur Karte i blättern, in zwei getrennten Schritten:
+    1. die offene Karte fliegt in Richtung dir (-1 links, 1 rechts) aus dem
+       Bild und blendet dabei aus, ausgehend von der Lage, in der der Finger
+       sie losgelassen hat;
+    2. erst danach wird die neue Karte vom Stapel ausgeteilt: sie hebt sich
+       leicht vergrößert an und legt sich gerade hin. */
+async function goCard(i, dir, from) {
   const n = TYPE_KEYS.length;
   i = (i + n) % n;
-  if (i === cardIdx) { placeCards(); return; }
-  const stack = $('#pcStack'); if (!stack) return;
-  const top = stack.querySelector('.pc-face[data-pos="0"]');
-  const incoming = stack.querySelector(`.pc-face[data-i="${i}"]`);
+  const stack = $('#pcStack');
+  if (!stack) return;
+  if (cardBusy) { if (!from) cardNext = [i, dir]; return; }
+  const old = stack.querySelector('.pc-face.is-top');
+  const nu = stack.querySelector(`.pc-face[data-i="${i}"]`);
+  if (!old || !nu || i === cardIdx) { showCard(); return; }
+  if (calm() || !old.animate) { cardIdx = i; showCard(); return; }
+  cardBusy = true;
   const w = stack.clientWidth;
-  if (dir > 0 && top) {
-    // Wegwerfen: aus der aktuellen Lage weiter nach links mit Drehung …
-    top.classList.add('pc-throw');
-    top.style.transform = `translate(${-w * 1.15}px, ${-18}px) rotate(-16deg)`;
-    setTimeout(() => {
-      // … dann ohne Übergang hinter den Stapel und von dort einrücken.
-      top.classList.remove('pc-throw');
-      cardIdx = i; placeCards();
-    }, 300);
-  } else if (incoming) {
-    // Hereinholen: Startlage rechts außerhalb, dann auf den Stapel legen.
-    incoming.classList.add('pc-noanim');
-    incoming.dataset.pos = 0;
-    incoming.style.transform = `translate(${w * 1.15}px, ${-18}px) rotate(16deg)`;
-    incoming.getBoundingClientRect();     // Startlage festschreiben
-    incoming.classList.remove('pc-noanim');
-    cardIdx = i;
-    requestAnimationFrame(() => placeCards());
-  }
+  const start = from || 'none';
+  try {
+    await old.animate([
+      { transform: start, opacity: 1 },
+      { transform: `translate(${dir * w * 1.25}px, ${-w * 0.08}px) rotate(${dir * 14}deg)`, opacity: 0 },
+    ], { duration: 280, easing: 'cubic-bezier(.45,0,.85,.4)', fill: 'forwards' }).finished;
+    old.getAnimations().forEach((a) => a.cancel());
+    cardIdx = i; showCard();
+    await nu.animate([
+      { transform: 'translateY(14px) scale(.94)', opacity: 0, offset: 0 },
+      { transform: 'translateY(-4px) scale(1.01)', opacity: 1, offset: .7 },
+      { transform: 'none', opacity: 1 },
+    ], { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished;
+  } catch (e) { cardIdx = i; showCard(); }
+  cardBusy = false;
+  if (cardNext) { const [ni, nd] = cardNext; cardNext = null; goCard(ni, nd); }
 }
 
-/** Wischgeste: die oberste Karte folgt dem Finger und kippt leicht. Ab
+/** Wischgeste: die offene Karte folgt dem Finger und kippt leicht. Ab
     einem Viertel der Breite (höchstens 110 px) oder einem schnellen Wisch wird geblättert,
     sonst federt sie zurück. Senkrechtes Wischen bleibt der Seite. */
 function wireCardSwipe() {
@@ -723,7 +736,8 @@ function wireCardSwipe() {
   let x0 = 0, y0 = 0, t0 = 0, dx = 0, drag = false, axis = null, swallow = false, top = null;
   card.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.pc-dot')) return;
-    top = card.querySelector('.pc-face[data-pos="0"]'); if (!top) return;
+    if (cardBusy) return;
+    top = card.querySelector('.pc-face.is-top'); if (!top) return;
     x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); dx = 0; drag = true; axis = null;
   });
   card.addEventListener('pointermove', (e) => {
@@ -737,26 +751,33 @@ function wireCardSwipe() {
     if (axis !== 'x') return;
     dx = mx;
     top.style.transform = `translate(${dx}px, ${Math.abs(dx) * -0.04}px) rotate(${dx * 0.045}deg)`;
-    card.style.setProperty('--pc-pull', Math.min(1, Math.abs(dx) / (card.clientWidth * 0.5)).toFixed(3));
   });
   const end = () => {
     if (!drag) return;
     drag = false;
-    card.style.setProperty('--pc-pull', 0);
     if (axis !== 'x') return;
     top.classList.remove('pc-drag');
     swallow = true; setTimeout(() => { swallow = false; }, 50);   // kein Antippen nach dem Wischen
     const v = Math.abs(dx) / Math.max(1, performance.now() - t0);
     if (Math.abs(dx) > Math.min(card.clientWidth * 0.25, 110) || (v > 0.5 && Math.abs(dx) > 30)) {
-      goCard(cardIdx + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
-    } else placeCards();
+      // Links wischen: nächste Karte, rechts: vorige. Die Karte fliegt in
+      // Wischrichtung weiter, ab der Lage, in der sie losgelassen wurde.
+      const from = top.style.transform;
+      goCard(cardIdx + (dx < 0 ? 1 : -1), dx < 0 ? -1 : 1, from);
+    } else if (top.animate && !calm()) {
+      // Zurückfedern statt springen
+      const from = top.style.transform;
+      top.style.transform = '';
+      top.animate([{ transform: from }, { transform: 'none' }],
+        { duration: 300, easing: 'cubic-bezier(.2,1.3,.4,1)' });
+    } else showCard();
   };
   card.addEventListener('pointerup', end);
   card.addEventListener('pointercancel', end);
   card.addEventListener('click', (e) => {
     if (swallow) { e.stopPropagation(); e.preventDefault(); return; }
     const d = e.target.closest('.pc-dot');
-    if (d) { const i = Number(d.dataset.card); goCard(i, i > cardIdx ? 1 : -1); }
+    if (d) { const i = Number(d.dataset.card); goCard(i, i > cardIdx ? -1 : 1); }
   }, true);
 }
 

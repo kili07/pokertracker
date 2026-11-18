@@ -1126,9 +1126,18 @@ fieldset{border:0;padding:0;margin:0}
 }
 .pc-stack{position:relative;height:100%}
 
-/* Drei Damen als Stapel. Platz 0 liegt oben, die anderen schauen leicht
-   verdreht darunter hervor. --pc-pull (0 bis 1, beim Wischen) hebt die
-   nächste Karte schon ein Stück an. */
+/* Stapel: hinten zwei verdeckte Karten (Rückseite), darüber offen nur die
+   Dame des gewählten Bereichs. Die anderen Damen liegen unsichtbar bereit
+   und werden beim Blättern ausgeteilt (Animation in app.js, goCard). */
+.pc-deck{position:absolute;inset:0;border-radius:clamp(10px,4.5cqmin,22px);
+  background:
+    repeating-linear-gradient(45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
+    repeating-linear-gradient(-45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
+    var(--pc-back);
+  border:clamp(5px,2.2cqmin,10px) solid var(--pc-paper);
+  box-shadow:0 0 0 1px var(--pc-edge),0 1px 2px var(--pc-shadow),0 6px 18px var(--pc-shadow)}
+.pc-deck-1{transform:translate(-3px,4px) rotate(-1.6deg)}
+.pc-deck-2{transform:translate(4px,6px) rotate(1.4deg)}
 .pc-face{
   position:absolute;inset:0;
   display:grid;grid-template-columns:clamp(30px,11cqmin,64px) minmax(0,1fr) clamp(30px,11cqmin,64px);
@@ -1143,20 +1152,13 @@ fieldset{border:0;padding:0;margin:0}
   border:1px solid var(--pc-edge);
   box-shadow:inset 0 1px 0 var(--pc-light),inset 0 -2px 6px var(--pc-inner),
     0 1px 1px var(--pc-shadow),0 10px 28px var(--pc-shadow-2);
-  transition:transform .48s cubic-bezier(.2,.9,.25,1.12),filter .3s ease;
-  will-change:transform;
+  will-change:transform,opacity;
 }
-.pc-face[data-pos="0"]{z-index:3}
-.pc-face[data-pos="1"]{z-index:2;filter:brightness(.97);
-  transform:translate(calc(-4px + var(--pc-pull,0) * 4px),calc(5px - var(--pc-pull,0) * 5px))
-    rotate(calc(-2.4deg + var(--pc-pull,0) * 2.4deg)) scale(calc(.975 + var(--pc-pull,0) * .025))}
-.pc-face[data-pos="2"]{z-index:1;filter:brightness(.94);
-  transform:translate(4px,4px) rotate(1.8deg) scale(.955)}
-/* Beim Ziehen folgt die Karte ohne Verzögerung, beim Wegwerfen beschleunigt sie. */
-.pc-face.pc-drag{transition:none;cursor:grabbing}
-.pc-face.pc-noanim{transition:none}
-.pc-face.pc-throw{transition:transform .3s cubic-bezier(.5,0,.9,.5);z-index:4}
-.pc-face[data-pos="0"]:not(.pc-drag){cursor:grab}
+.pc-face{visibility:hidden;z-index:1}
+.pc-face.is-top{visibility:visible;z-index:3}
+/* Beim Ziehen folgt die Karte ohne Verzögerung. */
+.pc-face.pc-drag{cursor:grabbing}
+.pc-face.is-top:not(.pc-drag){cursor:grab}
 
 /* Punkte unter dem Stapel: zeigen die Karte und blättern beim Antippen */
 .pc-dots{position:absolute;left:0;right:0;bottom:0;height:22px;display:flex;justify-content:center;gap:4px}
