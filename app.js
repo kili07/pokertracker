@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.5.2';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -692,12 +692,27 @@ let cardBusy = false;
 let cardNext = null;     // während einer Animation angetippter Punkt, kommt danach dran
 const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Zur Karte i blättern, in zwei getrennten Schritten:
-    1. die offene Karte fliegt in Richtung dir (-1 links, 1 rechts) aus dem
-       Bild und blendet dabei aus, ausgehend von der Lage, in der der Finger
-       sie losgelassen hat;
-    2. erst danach wird die neue Karte vom Stapel ausgeteilt: sie hebt sich
-       leicht vergrößert an und legt sich gerade hin. */
+/* Lage einer Karte, die unter der offenen bereitliegt: etwas kleiner,
+   tiefer und transparent. p = 0 (verdeckt) bis 1 (fertig aufgedeckt). */
+const underPose = (p) => `translateY(${(14 * (1 - p)).toFixed(1)}px) scale(${(0.94 + 0.06 * p).toFixed(4)})`;
+
+/** Karte unter der offenen anzeigen (beim Ziehen), Fortschritt p. */
+function revealUnder(f, p) {
+  $$('#pcStack .pc-face.is-under').forEach((x) => { if (x !== f) hideUnder(x); });
+  if (!f) return;
+  f.classList.add('is-under');
+  f.style.transform = underPose(p);
+  f.style.opacity = Math.min(1, p * 1.4).toFixed(3);
+}
+function hideUnder(f) {
+  f.classList.remove('is-under');
+  f.style.transform = ''; f.style.opacity = '';
+}
+
+/** Zur Karte i blättern: die offene Karte fliegt in Richtung dir
+    (-1 links, 1 rechts) aus dem Bild, und gleichzeitig legt sich die neue
+    Karte, die schon darunter aufgedeckt wird, fertig hin. Beim Wischen
+    beginnt beides dort, wo der Finger die Karten gelassen hat. */
 async function goCard(i, dir, from) {
   const n = TYPE_KEYS.length;
   i = (i + n) % n;
@@ -710,35 +725,44 @@ async function goCard(i, dir, from) {
   if (calm() || !old.animate) { cardIdx = i; showCard(); return; }
   cardBusy = true;
   const w = stack.clientWidth;
-  const start = from || 'none';
+  if (!nu.classList.contains('is-under')) revealUnder(nu, 0);
+  const nuFrom = { transform: nu.style.transform, opacity: nu.style.opacity || '0' };
   try {
-    await old.animate([
-      { transform: start, opacity: 1 },
+    const out = old.animate([
+      { transform: from || 'none', opacity: 1 },
       { transform: `translate(${dir * w * 1.25}px, ${-w * 0.08}px) rotate(${dir * 14}deg)`, opacity: 0 },
-    ], { duration: 280, easing: 'cubic-bezier(.45,0,.85,.4)', fill: 'forwards' }).finished;
-    old.getAnimations().forEach((a) => a.cancel());
-    cardIdx = i; showCard();
-    await nu.animate([
-      { transform: 'translateY(14px) scale(.94)', opacity: 0, offset: 0 },
-      { transform: 'translateY(-4px) scale(1.01)', opacity: 1, offset: .7 },
+    ], { duration: 300, easing: 'cubic-bezier(.45,0,.85,.4)', fill: 'forwards' });
+    // Ohne Wischen (Punkt angetippt) startet die neue Karte, sobald die alte
+    // ein Stück unterwegs ist; nach dem Wischen sofort.
+    const into = nu.animate([
+      nuFrom,
       { transform: 'none', opacity: 1 },
-    ], { duration: 360, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished;
-  } catch (e) { cardIdx = i; showCard(); }
+    ], { duration: 340, delay: from ? 0 : 90, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+    await Promise.all([out.finished, into.finished]);
+    old.getAnimations().forEach((a) => a.cancel());
+    nu.getAnimations().forEach((a) => a.cancel());
+  } catch (e) { /* abgebrochen: unten sauber einordnen */ }
+  hideUnder(nu);
+  cardIdx = i; showCard();
   cardBusy = false;
   if (cardNext) { const [ni, nd] = cardNext; cardNext = null; goCard(ni, nd); }
 }
 
-/** Wischgeste: die offene Karte folgt dem Finger und kippt leicht. Ab
-    einem Viertel der Breite (höchstens 110 px) oder einem schnellen Wisch wird geblättert,
-    sonst federt sie zurück. Senkrechtes Wischen bleibt der Seite. */
+/** Wischgeste: die offene Karte folgt dem Finger und kippt leicht; die
+    Karte, zu der geblättert würde, deckt sich darunter schon mit auf.
+    Ab einem Viertel der Breite (höchstens 110 px) oder einem schnellen
+    Wisch wird geblättert, sonst federt alles zurück. Senkrechtes Wischen
+    bleibt der Seite. */
 function wireCardSwipe() {
   const card = $('#pcCard'); if (!card) return;
-  let x0 = 0, y0 = 0, t0 = 0, dx = 0, drag = false, axis = null, swallow = false, top = null;
+  const n = TYPE_KEYS.length;
+  let x0 = 0, y0 = 0, t0 = 0, dx = 0, drag = false, axis = null, swallow = false, top = null, under = null;
+  const target = (d) => (cardIdx + (d < 0 ? 1 : -1) + n) % n;
   card.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.pc-dot')) return;
     if (cardBusy) return;
     top = card.querySelector('.pc-face.is-top'); if (!top) return;
-    x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); dx = 0; drag = true; axis = null;
+    x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); dx = 0; drag = true; axis = null; under = null;
   });
   card.addEventListener('pointermove', (e) => {
     if (!drag) return;
@@ -751,6 +775,10 @@ function wireCardSwipe() {
     if (axis !== 'x') return;
     dx = mx;
     top.style.transform = `translate(${dx}px, ${Math.abs(dx) * -0.04}px) rotate(${dx * 0.045}deg)`;
+    if (dx) {
+      under = card.querySelector(`.pc-face[data-i="${target(dx)}"]`);
+      revealUnder(under, Math.min(1, Math.abs(dx) / (card.clientWidth * 0.6)));
+    }
   });
   const end = () => {
     if (!drag) return;
@@ -760,17 +788,20 @@ function wireCardSwipe() {
     swallow = true; setTimeout(() => { swallow = false; }, 50);   // kein Antippen nach dem Wischen
     const v = Math.abs(dx) / Math.max(1, performance.now() - t0);
     if (Math.abs(dx) > Math.min(card.clientWidth * 0.25, 110) || (v > 0.5 && Math.abs(dx) > 30)) {
-      // Links wischen: nächste Karte, rechts: vorige. Die Karte fliegt in
-      // Wischrichtung weiter, ab der Lage, in der sie losgelassen wurde.
-      const from = top.style.transform;
-      goCard(cardIdx + (dx < 0 ? 1 : -1), dx < 0 ? -1 : 1, from);
+      // Links wischen: nächste Karte, rechts: vorige.
+      goCard(target(dx), dx < 0 ? -1 : 1, top.style.transform);
     } else if (top.animate && !calm()) {
-      // Zurückfedern statt springen
+      // Zurückfedern, die darunter aufgedeckte Karte verschwindet wieder.
       const from = top.style.transform;
       top.style.transform = '';
       top.animate([{ transform: from }, { transform: 'none' }],
         { duration: 300, easing: 'cubic-bezier(.2,1.3,.4,1)' });
-    } else showCard();
+      if (under) {
+        const u = under, uf = { transform: u.style.transform, opacity: u.style.opacity };
+        u.animate([uf, { transform: underPose(0), opacity: 0 }], { duration: 220, easing: 'ease-out' })
+          .finished.then(() => { if (!u.classList.contains('is-top')) hideUnder(u); }).catch(() => {});
+      }
+    } else { if (under) hideUnder(under); showCard(); }
   };
   card.addEventListener('pointerup', end);
   card.addEventListener('pointercancel', end);

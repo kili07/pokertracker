@@ -1156,6 +1156,8 @@ fieldset{border:0;padding:0;margin:0}
 }
 .pc-face{visibility:hidden;z-index:1}
 .pc-face.is-top{visibility:visible;z-index:3}
+/* Die Karte, zu der gerade geblättert wird, liegt aufgedeckt darunter. */
+.pc-face.is-under{visibility:visible;z-index:2}
 /* Beim Ziehen folgt die Karte ohne Verzögerung. */
 .pc-face.pc-drag{cursor:grabbing}
 .pc-face.is-top:not(.pc-drag){cursor:grab}
