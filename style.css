@@ -1083,7 +1083,7 @@ fieldset{border:0;padding:0;margin:0}
 .fz-hint{padding-top:8px;color:var(--muted);font-size:13px}
 .fz-start{margin-top:18px;height:56px;border:0;border-radius:28px;background:var(--accent);color:var(--on-accent);
   font-size:18px;font-weight:600}
-.fz-recent,.pc-recent{margin-top:22px;display:flex;flex-direction:column}
+.fz-recent{margin-top:22px;display:flex;flex-direction:column}
 .alt-row{display:flex;align-items:center;gap:8px;min-height:52px;border:0;border-top:1px solid var(--line);
   background:transparent;padding:0;text-align:left;width:100%}
 .alt-date{width:64px;flex:none;color:var(--muted);font-size:14px}
@@ -1099,23 +1099,74 @@ fieldset{border:0;padding:0;margin:0}
 :root[data-theme="playcard"] .hero-value,
 :root[data-theme="playcard"] .live-clock{font-weight:400}
 :root[data-theme="playcard"] h2{font-family:var(--font-ui)}
-.pc-card{position:relative;margin-top:4px;min-height:400px;background:var(--surface);border:1px solid var(--line);
-  border-radius:18px;display:flex;flex-direction:column;justify-content:center;padding:84px 24px}
-.pc-index{position:absolute;left:18px;top:14px;display:flex;flex-direction:column;align-items:flex-start;line-height:1}
-.pc-index-rot{left:auto;top:auto;right:18px;bottom:14px;transform:rotate(180deg)}
-.pc-num{font-family:"DM Serif Display",Georgia,serif;font-size:40px;line-height:1;white-space:nowrap}
-.pc-lbl{font-size:14px;padding-top:2px}
-.pc-rows{display:flex;flex-direction:column}
-.pc-row{min-height:72px;border:0;border-bottom:1px solid var(--line-soft);background:transparent;padding:0;
-  display:flex;align-items:center;gap:16px;text-align:left;min-width:0}
+
+/* Die Karte füllt die Übersicht bis knapp über die untere Leiste.
+   --pc-h setzt fitCard() in app.js; der Wert hier gilt nur bis dahin.
+   Die Karte ist ein Größen-Container: Schrift, Symbole und Abstände
+   wachsen mit ihr (cqmin = kürzere Seite der Karte). */
+:root[data-ui="playcard"] body[data-view="home"] main{padding-bottom:0}
+:root[data-ui="playcard"] .home-alt{padding-top:0}
+:root[data-ui="playcard"] .home-alt .notice{margin:0 0 12px}
+.pc-card{
+  container-type:size; container-name:pc;
+  position:relative; height:var(--pc-h, calc(100svh - 170px)); min-height:200px;
+  background:var(--surface); border:1px solid var(--line); border-radius:clamp(14px,3vw,24px);
+  overflow:hidden;
+}
+/* Innenfläche als eigenes Element: Container-Abfragen wirken nur auf die
+   Kinder des Containers, nicht auf ihn selbst. */
+.pc-face{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);
+  padding:clamp(12px,4cqmin,32px) clamp(14px,4.5cqmin,36px)}
+.pc-index{display:flex;flex-direction:column;align-items:flex-start;line-height:1;justify-self:start;max-width:100%}
+.pc-index-rot{justify-self:end;transform:rotate(180deg)}
+.pc-num{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(30px,12cqmin,88px);line-height:1;
+  white-space:nowrap;letter-spacing:-.01em}
+.pc-lbl{font-size:clamp(12px,3.6cqmin,20px);padding-top:.25em}
+.pc-rows{display:flex;flex-direction:column;justify-content:center;min-height:0;
+  padding:clamp(4px,3cqh,40px) clamp(0px,2cqmin,24px)}
+/* Die drei Bereiche teilen sich die Mitte wie die Bilder auf einer Karte,
+   aber nicht beliebig hoch, sonst zerfallen sie auf Tablets. */
+.pc-row{flex:1 1 0;max-height:clamp(64px,22cqh,190px);min-height:0;border:0;border-bottom:1px solid var(--line-soft);
+  background:transparent;padding:0;display:flex;align-items:center;gap:clamp(10px,4cqmin,28px);
+  text-align:left;min-width:0;transition:background var(--fast)}
+.pc-row:active{background:var(--surface-2)}
 .pc-row:last-child{border-bottom:0}
-.pc-suit{flex:none;fill:var(--pc-suit-black)}
+.pc-suit{flex:none;width:clamp(28px,10.5cqmin,80px);height:clamp(28px,10.5cqmin,80px);fill:var(--pc-suit-black)}
 .pc-suit-casino{fill:var(--pc-suit-red)}
-.pc-name{flex:1;font-size:17px;min-width:0}
-.pc-val{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(22px,7.5vw,30px);white-space:nowrap}
-.pc-start{margin-top:16px;height:56px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);
-  font-size:18px;font-weight:600}
-.pc-recent .alt-recent-head h2{color:var(--text)}
+.pc-name{flex:1;min-width:0;font-size:clamp(15px,4.8cqmin,30px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-val{flex:none;font-family:"DM Serif Display",Georgia,serif;font-size:clamp(20px,8cqmin,58px);
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* Quer oder sehr breit (Handy gedreht, Tablet quer, Desktop): die drei
+   Bereiche nebeneinander, Symbol über Name und Betrag. */
+@container pc (min-aspect-ratio: 5/4){
+  /* Indizes links oben und rechts unten neben den Bereichen statt darüber,
+     sonst bleibt bei niedriger Karte für die Bereiche kaum Höhe. */
+  .pc-face{grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr)}
+  .pc-index{grid-area:1/1;align-self:start}
+  .pc-index-rot{grid-area:1/3;align-self:end}
+  .pc-rows{grid-area:1/2;flex-direction:row;align-items:stretch;padding:clamp(4px,4cqh,40px) clamp(8px,3cqw,40px)}
+  .pc-row{flex:1 1 0;max-height:none;flex-direction:column;justify-content:center;align-items:flex-start;
+    border-bottom:0;border-left:1px solid var(--line-soft);padding:0 clamp(8px,2cqw,28px);
+    gap:clamp(4px,2cqh,16px)}
+  .pc-row:first-child{border-left:0;padding-left:0}
+  .pc-row:last-child{padding-right:0}
+  .pc-name{flex:none;max-width:100%}
+  .pc-val{font-size:clamp(16px,min(3.3cqw,10cqh),48px);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .pc-suit{width:clamp(24px,12cqh,72px);height:clamp(24px,12cqh,72px)}
+}
+/* Handy quer: die Spalte von 560 px wäre hier eine schmale Insel, die
+   Karte nutzt deshalb die volle Breite. */
+@media (min-width:560px) and (max-height:500px){
+  :root[data-ui="playcard"] body[data-view="home"] main{max-width:none}
+}
+/* Sehr niedrige Karte (quer gehaltenes Handy): Indizes kleiner, damit die
+   Bereiche Platz behalten. */
+@container pc (max-height: 360px){
+  .pc-num{font-size:clamp(24px,11cqh,40px)}
+  .pc-lbl{font-size:12px}
+}
 
 /* Kurve */
 .cv-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}

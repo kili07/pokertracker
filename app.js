@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -331,6 +331,7 @@ let view = 'home';
 function nav(v) {
   if (v !== 'home') armBack();            // Zurück führt dann erst auf die Übersicht
   view = v;
+  document.body.dataset.view = v;          // für Regeln, die nur auf der Übersicht gelten
   $$('.view').forEach((s) => s.classList.toggle('hidden', s.id !== 'view-' + v));
   $$('.tabbar button[data-nav]').forEach((b) => b.classList.toggle('on', b.dataset.nav === v));
   // Kurve und Monatsblatt haben auf der Übersicht einen eigenen Kopf.
@@ -345,6 +346,7 @@ function render() {
   else if (view === 'players') { renderPlayers(); }
   else if (view === 'stats') { renderStats(); }
   renderLiveBar();
+  fitCard();
 }
 
 /* ── Backup-Erinnerung ──────────────────────────────────────── */
@@ -572,20 +574,34 @@ function renderHomeCard() {
   const corner = (hidden) => `<div class="pc-index${hidden ? ' pc-index-rot' : ''}"${hidden ? ' aria-hidden="true"' : ''}>
       <span class="pc-num ${total < 0 ? 'down' : ''}">${idx}</span><span class="pc-lbl">Euro Bankroll</span></div>`;
 
+  /* Die Karte ist die ganze Startseite: keine Sessionliste, kein eigener
+     Knopf (neue Session über ＋ in der Leiste). Der Hinweis zur Sicherung
+     steht über der Karte, damit fitCard() ihn bei der Höhe mitrechnet. */
   $('#homeAlt').innerHTML = `
-    <div class="pc-card">
+    <div class="notice hidden" id="backupNoteAlt"></div>
+    <div class="pc-card" id="pcCard"><div class="pc-face">
       ${corner(false)}
       <div class="pc-rows">${TYPE_KEYS.map((k) => `<button class="pc-row" data-roll-open="${k}">
-          <svg aria-hidden="true" class="pc-suit pc-suit-${k}" width="40" height="40" viewBox="0 0 24 24">${SUITS[k]}</svg>
+          <svg aria-hidden="true" class="pc-suit pc-suit-${k}" viewBox="0 0 24 24">${SUITS[k]}</svg>
           <span class="pc-name">${TYPES[k].label}</span>
           <span class="pc-val ${bankroll(k) < 0 ? 'down' : ''}">${money(bankroll(k))}</span>
         </button>`).join('')}</div>
       ${corner(true)}
-    </div>
-    <div class="notice hidden" id="backupNoteAlt"></div>
-    ${altStartBtn('pc-start', 'Session erfassen')}
-    ${altRecent('pc', 'Tippe auf „Session erfassen“ für Deine erste Session.')}`;
+    </div></div>`;
   renderBackupHint($('#backupNoteAlt'));
+}
+
+/** Höhe der Spielkarte so setzen, dass sie genau den Platz zwischen ihrer
+    Oberkante und der unteren Leiste füllt. CSS allein kennt die Höhe von
+    Kopfzeile, Live-Leiste und Sicherungshinweis nicht; die Vorgabe in
+    style.css gilt nur bis zum ersten Messen. */
+function fitCard() {
+  const card = $('#pcCard');
+  if (!card || view !== 'home' || db.ui !== 'playcard') return;
+  const top = card.getBoundingClientRect().top + window.scrollY;
+  const padBottom = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+  const h = Math.max(200, Math.floor(window.innerHeight - top - padBottom));
+  card.style.setProperty('--pc-h', h + 'px');
 }
 
 /* ── Kurve ─────────────────────────────────────────────────── */
@@ -3443,4 +3459,7 @@ window.addEventListener('pagehide', saveResume);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveResume(); });
 
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+// Drehen, Tastatur, Fenstergröße: die Spielkarte neu einpassen.
+window.addEventListener('resize', fitCard);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitCard);
 wireUpdates();
