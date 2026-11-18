@@ -377,6 +377,14 @@
   --fab-bg:#17171a; --fab-ink:#fff; --fab-shadow:none;
 
   --pc-suit-black:#17171a; --pc-suit-red:#b3261e;
+  /* Spielkarte: Karton, Rahmen und Hofkartenfarben */
+  --pc-paper:#fbfaf5; --pc-paper-2:#f1ede1; --pc-light:rgba(255,255,255,.85);
+  --pc-weave:rgba(120,110,90,.035); --pc-edge:#cfcabd; --pc-inner:rgba(120,110,90,.08);
+  --pc-shadow:rgba(23,23,26,.14); --pc-shadow-2:rgba(23,23,26,.22);
+  --pc-frame:#24459c; --pc-ink:#17171a; --pc-red:#c0322a; --pc-gold:#e8b93a;
+  --pc-back:#b3261e; --pc-back-line:rgba(255,255,255,.28);
+  --pc-skin:#f8ead4; --pc-glow:rgba(232,185,58,.10);
+  --pc-frame-soft:rgba(36,69,156,.32); --pc-edge-soft:#d8d3c6;
 
   --r-xs:6px; --r-sm:10px; --r:12px; --r-lg:16px; --r-xl:18px;
   --font-ui:"Public Sans",system-ui,sans-serif;
@@ -1102,71 +1110,219 @@ fieldset{border:0;padding:0;margin:0}
 
 /* Die Karte füllt die Übersicht bis knapp über die untere Leiste.
    --pc-h setzt fitCard() in app.js; der Wert hier gilt nur bis dahin.
-   Die Karte ist ein Größen-Container: Schrift, Symbole und Abstände
-   wachsen mit ihr (cqmin = kürzere Seite der Karte). */
+   .pc-card ist ein Größen-Container: Schrift, Symbole und Abstände wachsen
+   mit ihr (cqmin = kürzere Seite). Aufbau wie eine klassische Spielkarte:
+   Eckindex links oben und rechts unten außerhalb des Bildfelds, im Bildfeld
+   blauer Doppelrahmen, Schärpe mit Kronen, oben und gespiegelt unten das
+   große Pik mit der Bankroll, in der Mitte ein Schild mit den Bereichen. */
 :root[data-ui="playcard"] body[data-view="home"] main{padding-bottom:0}
 :root[data-ui="playcard"] .home-alt{padding-top:0}
 :root[data-ui="playcard"] .home-alt .notice{margin:0 0 12px}
 .pc-card{
   container-type:size; container-name:pc;
   position:relative; height:var(--pc-h, calc(100svh - 170px)); min-height:200px;
-  background:var(--surface); border:1px solid var(--line); border-radius:clamp(14px,3vw,24px);
-  overflow:hidden;
+  padding:6px 8px 8px;
 }
-/* Innenfläche als eigenes Element: Container-Abfragen wirken nur auf die
-   Kinder des Containers, nicht auf ihn selbst. */
-.pc-face{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);
-  padding:clamp(12px,4cqmin,32px) clamp(14px,4.5cqmin,36px)}
-.pc-index{display:flex;flex-direction:column;align-items:flex-start;line-height:1;justify-self:start;max-width:100%}
-.pc-index-rot{justify-self:end;transform:rotate(180deg)}
-.pc-num{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(30px,12cqmin,88px);line-height:1;
-  white-space:nowrap;letter-spacing:-.01em}
-.pc-lbl{font-size:clamp(12px,3.6cqmin,20px);padding-top:.25em}
-.pc-rows{display:flex;flex-direction:column;justify-content:center;min-height:0;
-  padding:clamp(4px,3cqh,40px) clamp(0px,2cqmin,24px)}
-/* Die drei Bereiche teilen sich die Mitte wie die Bilder auf einer Karte,
-   aber nicht beliebig hoch, sonst zerfallen sie auf Tablets. */
-.pc-row{flex:1 1 0;max-height:clamp(64px,22cqh,190px);min-height:0;border:0;border-bottom:1px solid var(--line-soft);
-  background:transparent;padding:0;display:flex;align-items:center;gap:clamp(10px,4cqmin,28px);
+/* Zwei Rückseiten unter der Karte, leicht verdreht: ein Stapel auf dem Tisch. */
+.pc-back{position:absolute;inset:8px 10px 10px;border-radius:clamp(10px,4.5cqmin,22px);
+  background:
+    repeating-linear-gradient(45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
+    repeating-linear-gradient(-45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
+    var(--pc-back);
+  border:clamp(5px,2.2cqmin,10px) solid var(--pc-paper);
+  box-shadow:0 1px 2px var(--pc-shadow),0 6px 18px var(--pc-shadow)}
+.pc-back-1{transform:rotate(-2.2deg) translate(-2px,3px)}
+.pc-back-2{transform:rotate(1.4deg) translate(2px,2px)}
+
+/* Vorderseite: Kartenkarton mit Lichteinfall von links oben, feiner
+   Leinenstruktur und weichem Schlagschatten. */
+.pc-face{
+  position:relative;height:100%;
+  display:grid;grid-template-columns:clamp(30px,11cqmin,64px) minmax(0,1fr) clamp(30px,11cqmin,64px);
+  grid-template-rows:minmax(0,1fr);
+  padding:clamp(10px,4cqmin,26px) 0;
+  border-radius:clamp(10px,4.5cqmin,22px);
+  background:
+    radial-gradient(120% 80% at 18% 8%,var(--pc-light) 0,transparent 60%),
+    repeating-linear-gradient(0deg,var(--pc-weave) 0 1px,transparent 1px 3px),
+    repeating-linear-gradient(90deg,var(--pc-weave) 0 1px,transparent 1px 3px),
+    linear-gradient(160deg,var(--pc-paper),var(--pc-paper-2));
+  border:1px solid var(--pc-edge);
+  box-shadow:inset 0 1px 0 var(--pc-light),inset 0 -2px 6px var(--pc-inner),
+    0 1px 1px var(--pc-shadow),0 10px 28px var(--pc-shadow-2);
+}
+/* Eckindex: Buchstabe über Pik, in der Randspalte neben dem Bildfeld. */
+.pc-corner{display:flex;flex-direction:column;align-items:center;justify-self:center;align-self:start;
+  line-height:.9;color:var(--text)}
+.pc-corner-rot{align-self:end;transform:rotate(180deg)}
+.pc-q{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(22px,9.5cqmin,56px)}
+.pc-cpip{width:clamp(14px,6cqmin,36px);height:clamp(14px,6cqmin,36px);fill:var(--pc-suit-black);margin-top:.15em}
+
+/* Bildfeld mit blauem Doppelrahmen: obere Hälfte, Schild, gespiegelte Hälfte */
+.pc-court{position:relative;min-width:0;min-height:0;overflow:hidden;
+  display:grid;grid-template-rows:minmax(0,1fr) auto minmax(0,1fr);grid-template-columns:minmax(0,1fr);
+  padding:clamp(6px,2.4cqmin,18px) clamp(8px,3cqmin,22px);
+  border:2px solid var(--pc-frame);border-radius:2px;
+  box-shadow:inset 0 0 0 3px var(--pc-paper),inset 0 0 0 4px var(--pc-frame);
+  background:
+    radial-gradient(70% 45% at 70% 30%,var(--pc-glow) 0,transparent 70%),
+    radial-gradient(70% 45% at 30% 70%,var(--pc-glow) 0,transparent 70%),
+    var(--pc-paper)}
+.pa-ink{fill:var(--pc-ink)} .pa-red{fill:var(--pc-red)} .pa-gold{fill:var(--pc-gold)}
+.pa-blue{fill:var(--pc-frame)} .pa-paper{fill:var(--pc-paper)} .pa-skin{fill:var(--pc-skin)}
+.pa-line{stroke:var(--pc-ink);stroke-width:1.3;stroke-linejoin:round}
+.pa-sline{stroke:var(--pc-ink);stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round}
+.pa-dash{stroke:var(--pc-paper);stroke-width:3;stroke-dasharray:.1 4.2;stroke-linecap:round}
+.pa-rod{stroke:var(--pc-ink);stroke-width:5;stroke-linecap:round}
+.pa-rodin{stroke:var(--pc-gold);stroke-width:2.6;stroke-linecap:round}
+
+/* Hälfte: links Pik und Bankroll, rechts die Dame, die zur Mitte hin steht */
+.pc-half{position:relative;min-height:0;display:flex;justify-content:space-between;align-items:stretch;gap:4px}
+.pc-half-rot{transform:rotate(180deg)}
+.pc-head{position:relative;z-index:1;flex:none;display:flex;flex-direction:column;align-items:flex-start;
+  line-height:1;max-width:58%}
+/* Die Dame steht rechts unten in ihrer Hälfte und darf hinter den Kopf
+   reichen; der Kopf liegt darüber, sein Text bleibt auf freiem Papier. */
+.pc-queen{position:absolute;right:0;bottom:0;width:66%;height:100%;
+  filter:drop-shadow(0 1px 1px var(--pc-shadow))}
+.pc-bigpip{width:clamp(30px,15cqmin,110px);height:clamp(30px,15cqmin,110px);fill:var(--pc-suit-black);
+  filter:drop-shadow(0 1px 0 var(--pc-light))}
+.pc-lbl{font-size:clamp(10px,3cqmin,17px);margin-top:.6em;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.pc-num{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(20px,7.6cqmin,60px);line-height:1;
+  white-space:nowrap;margin-top:.12em}
+
+/* Schild in der Mitte: weiß, Tusche- und Goldlinie, leicht erhaben. Es
+   liegt auf der Trennlinie der beiden Hälften wie das Band einer Hofkarte. */
+.pc-plaque{position:relative;z-index:2;align-self:center;justify-self:center;width:min(100%,520px);
+  display:flex;flex-direction:column;margin:clamp(4px,1.4cqmin,12px) 0;
+  padding:clamp(2px,1cqmin,8px) clamp(10px,3.4cqmin,24px);
+  background:var(--pc-paper);border:1.5px solid var(--pc-ink);border-radius:6px;
+  box-shadow:inset 0 0 0 3px var(--pc-paper),inset 0 0 0 4.5px var(--pc-gold),0 3px 10px var(--pc-shadow-2)}
+.pc-row{min-height:clamp(42px,10cqmin,80px);border:0;border-bottom:1px solid var(--line-soft);
+  background:transparent;padding:0;display:flex;align-items:center;gap:clamp(8px,3cqmin,20px);
   text-align:left;min-width:0;transition:background var(--fast)}
 .pc-row:active{background:var(--surface-2)}
 .pc-row:last-child{border-bottom:0}
-.pc-suit{flex:none;width:clamp(28px,10.5cqmin,80px);height:clamp(28px,10.5cqmin,80px);fill:var(--pc-suit-black)}
+.pc-suit{flex:none;width:clamp(20px,6.5cqmin,46px);height:clamp(20px,6.5cqmin,46px);fill:var(--pc-suit-black)}
 .pc-suit-casino{fill:var(--pc-suit-red)}
-.pc-name{flex:1;min-width:0;font-size:clamp(15px,4.8cqmin,30px);
+.pc-name{flex:1;min-width:0;font-size:clamp(14px,4.2cqmin,26px);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pc-val{flex:none;font-family:"DM Serif Display",Georgia,serif;font-size:clamp(20px,8cqmin,58px);
+.pc-val{flex:none;font-family:"DM Serif Display",Georgia,serif;font-size:clamp(18px,6.2cqmin,46px);
   white-space:nowrap;font-variant-numeric:tabular-nums}
 
-/* Quer oder sehr breit (Handy gedreht, Tablet quer, Desktop): die drei
-   Bereiche nebeneinander, Symbol über Name und Betrag. */
+/* Quer oder breit: Hälften links und rechts, Schild in der Mitte als
+   Liste (nebeneinander würden Namen und Beträge abgeschnitten). */
 @container pc (min-aspect-ratio: 5/4){
-  /* Indizes links oben und rechts unten neben den Bereichen statt darüber,
-     sonst bleibt bei niedriger Karte für die Bereiche kaum Höhe. */
-  .pc-face{grid-template-columns:auto minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr)}
-  .pc-index{grid-area:1/1;align-self:start}
-  .pc-index-rot{grid-area:1/3;align-self:end}
-  .pc-rows{grid-area:1/2;flex-direction:row;align-items:stretch;padding:clamp(4px,4cqh,40px) clamp(8px,3cqw,40px)}
-  .pc-row{flex:1 1 0;max-height:none;flex-direction:column;justify-content:center;align-items:flex-start;
-    border-bottom:0;border-left:1px solid var(--line-soft);padding:0 clamp(8px,2cqw,28px);
-    gap:clamp(4px,2cqh,16px)}
-  .pc-row:first-child{border-left:0;padding-left:0}
-  .pc-row:last-child{padding-right:0}
-  .pc-name{flex:none;max-width:100%}
-  .pc-val{font-size:clamp(16px,min(3.3cqw,10cqh),48px);max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .pc-suit{width:clamp(24px,12cqh,72px);height:clamp(24px,12cqh,72px)}
+  .pc-court{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  .pc-half{flex-direction:row}
+  .pc-plaque{width:auto;min-width:min(46cqw,300px);max-width:52cqw;margin:0 clamp(6px,2cqw,20px)}
+  .pc-row{min-height:clamp(30px,13cqh,64px)}
+  .pc-name{font-size:clamp(13px,min(2.6cqw,7cqh),22px)}
+  .pc-val{font-size:clamp(16px,min(3.4cqw,9cqh),38px)}
+  .pc-suit{width:clamp(16px,8cqh,36px);height:clamp(16px,8cqh,36px)}
+  .pc-bigpip{width:clamp(22px,14cqh,80px);height:clamp(22px,14cqh,80px)}
+  .pc-num{font-size:clamp(16px,min(3.2cqw,10cqh),44px)}
+  .pc-lbl{font-size:clamp(9px,3.4cqh,15px)}
 }
 /* Handy quer: die Spalte von 560 px wäre hier eine schmale Insel, die
    Karte nutzt deshalb die volle Breite. */
 @media (min-width:560px) and (max-height:500px){
   :root[data-ui="playcard"] body[data-view="home"] main{max-width:none}
 }
-/* Sehr niedrige Karte (quer gehaltenes Handy): Indizes kleiner, damit die
-   Bereiche Platz behalten. */
-@container pc (max-height: 360px){
-  .pc-num{font-size:clamp(24px,11cqh,40px)}
-  .pc-lbl{font-size:12px}
+
+/* ── Spielkarte: Kartenstil für alle Ansichten ──────────────────
+   Flächen sehen aus wie Karten aus dem Stapel: Kartenkarton mit Licht von
+   links oben, feine blaue Rahmenlinie innen, weicher Schatten. Bereichs-
+   Kürzel werden zu kleinen Eckindizes mit Farbsymbol. Nur hier gültig. */
+:root[data-theme="playcard"]{
+  --pc-pip-spade:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2C8 7 3 10 3 14.5A4.5 4.5 0 0 0 11 17c-.3 2-1 3.5-2.5 5h7c-1.5-1.5-2.2-3-2.5-5a4.5 4.5 0 0 0 8-2.5C21 10 16 7 12 2z'/%3E%3C/svg%3E");
+  --pc-pip-club:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='7' r='4.6'/%3E%3Ccircle cx='6.6' cy='14' r='4.6'/%3E%3Ccircle cx='17.4' cy='14' r='4.6'/%3E%3Cpath d='M12 11c-.2 5.5-1 8.5-3 11h6c-2-2.5-2.8-5.5-3-11z'/%3E%3C/svg%3E");
+  --pc-pip-diamond:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 20 12 12 22 4 12z'/%3E%3C/svg%3E");
+  --pc-cardbg:
+    radial-gradient(120% 90% at 12% 0%,var(--pc-light) 0,transparent 55%),
+    linear-gradient(165deg,var(--pc-paper),var(--pc-paper-2));
+  --pc-cardshadow:inset 0 0 0 4px var(--pc-paper),inset 0 0 0 5px var(--pc-frame-soft),
+    0 1px 1px var(--pc-shadow),0 6px 16px var(--pc-shadow);
 }
+:root[data-theme="playcard"] .card,
+:root[data-theme="playcard"] .stat,
+:root[data-theme="playcard"] .roll,
+:root[data-theme="playcard"] .list-full .row,
+:root[data-theme="playcard"] .note,
+:root[data-theme="playcard"] .imp-row,
+:root[data-theme="playcard"] .wiz-sum,
+:root[data-theme="playcard"] .notice,
+:root[data-theme="playcard"] .mb-detail{
+  background:var(--pc-cardbg);border:1px solid var(--pc-edge);box-shadow:var(--pc-cardshadow);
+}
+:root[data-theme="playcard"] .card{padding:18px 17px}
+:root[data-theme="playcard"] .stat{padding:15px 14px}
+:root[data-theme="playcard"] .list-full .row{padding:12px 14px}
+:root[data-theme="playcard"] .notice{border-left-width:1px}
+
+/* Überschriften der Karten mit kleinem Pik davor, Zahlen in der Kartenschrift */
+:root[data-theme="playcard"] .card-head h2::before,
+:root[data-theme="playcard"] .sec-title::before{
+  content:'';display:inline-block;width:.85em;height:.85em;margin-right:.45em;vertical-align:-.08em;
+  background:var(--pc-ink);-webkit-mask:var(--pc-pip-spade) center/contain no-repeat;mask:var(--pc-pip-spade) center/contain no-repeat}
+:root[data-theme="playcard"] .stat-v,
+:root[data-theme="playcard"] .row-v,
+:root[data-theme="playcard"] .bd-row .v,
+:root[data-theme="playcard"] .ev-eq,
+:root[data-theme="playcard"] .livebar-timer{font-family:"DM Serif Display",Georgia,serif;font-weight:400;letter-spacing:0}
+:root[data-theme="playcard"] .stat-v{font-size:25px}
+:root[data-theme="playcard"] .row-v{font-size:18px}
+:root[data-theme="playcard"] .day-head{color:var(--pc-frame);letter-spacing:.1em}
+
+/* Bereichs-Kürzel als Mini-Eckindex: Karte mit Farbsymbol statt Text */
+:root[data-theme="playcard"] .pill{
+  width:34px;height:44px;border-radius:4px;font-size:0;position:relative;
+  background:var(--pc-cardbg);border:1px solid var(--pc-edge);
+  box-shadow:inset 0 0 0 2px var(--pc-paper),inset 0 0 0 2.6px var(--pc-frame-soft),0 1px 2px var(--pc-shadow)}
+:root[data-theme="playcard"] .pill::before{
+  content:'';position:absolute;inset:11px 8px;background:var(--pc-ink);
+  -webkit-mask:var(--pc-pip-spade) center/contain no-repeat;mask:var(--pc-pip-spade) center/contain no-repeat}
+:root[data-theme="playcard"] .pill.mtt::before{-webkit-mask-image:var(--pc-pip-club);mask-image:var(--pc-pip-club)}
+:root[data-theme="playcard"] .pill.casino::before{background:var(--pc-red);
+  -webkit-mask-image:var(--pc-pip-diamond);mask-image:var(--pc-pip-diamond)}
+
+/* Segmente: der gewählte Eintrag liegt als Karte auf dem Tuch */
+:root[data-theme="playcard"] .seg{background:var(--surface-3);border:1px solid var(--pc-edge-soft)}
+:root[data-theme="playcard"] .seg button.on{background:var(--pc-cardbg);
+  box-shadow:inset 0 0 0 2px var(--pc-paper),inset 0 0 0 2.6px var(--pc-frame-soft),0 1px 3px var(--pc-shadow)}
+
+/* Knöpfe: Tusche mit Goldlinie wie das Schild auf der Karte */
+:root[data-theme="playcard"] .btn{background:var(--pc-cardbg);border-color:var(--pc-edge)}
+:root[data-theme="playcard"] .btn-primary,
+:root[data-theme="playcard"] .fab-tab svg{
+  background:var(--pc-ink);color:var(--on-accent);border-color:var(--pc-ink);
+  box-shadow:inset 0 0 0 2px var(--pc-ink),inset 0 0 0 3px var(--pc-gold)}
+:root[data-theme="playcard"] .btn-danger{color:var(--down)}
+
+/* Sheets: Kartenkarton, oben die blaue Rahmenlinie */
+:root[data-theme="playcard"] .sheet,
+:root[data-theme="playcard"] .cardpicker{
+  background:linear-gradient(180deg,var(--pc-paper),var(--pc-paper-2));
+  box-shadow:inset 0 4px 0 -1px var(--pc-paper),inset 0 5px 0 -1px var(--pc-frame-soft),0 -10px 30px var(--pc-shadow-2)}
+:root[data-theme="playcard"] input,
+:root[data-theme="playcard"] select,
+:root[data-theme="playcard"] textarea{background:var(--pc-paper)}
+
+/* Live-Leiste wie eine Karte am oberen Rand */
+:root[data-theme="playcard"] .livebar{background:var(--pc-cardbg);
+  box-shadow:inset 0 -4px 0 -1px var(--pc-paper),inset 0 -5px 0 -1px var(--pc-frame-soft),0 4px 12px var(--pc-shadow)}
+
+/* EV-Kartenslots: echte Kartenkanten */
+:root[data-theme="playcard"] .slot{box-shadow:inset 0 0 0 2px var(--pc-paper),inset 0 0 0 2.6px var(--pc-frame-soft),0 1px 2px var(--pc-shadow)}
+
+/* Untere Leiste: Kartenkarton statt flachem Weiß */
+:root[data-theme="playcard"] .tabbar{background:linear-gradient(180deg,var(--pc-paper),var(--pc-paper-2));
+  box-shadow:0 -1px 0 var(--pc-edge),0 -6px 18px var(--pc-shadow)}
+
+/* Design-Auswahl: Vorschaukachel mit kleiner Dame im Bildfeld */
+.u-playcard .tp-c{left:9px;right:9px;top:40px;height:16px;background:
+  linear-gradient(115deg,transparent 40%,#e8b93a 40% 46%,#c0322a 46% 54%,#17171a 54% 56%,transparent 56%),#fbfaf5;
+  border:1px solid #24459c}
 
 /* Kurve */
 .cv-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}

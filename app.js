@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -568,26 +568,91 @@ const SUITS = {
   casino: '<path d="M12 2 20 12 12 22 4 12z"/>',
 };
 
+/* Eigene Pik-Dame (keine Kopie einer Vorlage): Brustbild im Stil alter
+   Hofkarten mit Krone, offenem Haar, Perlenkette, Gewand in Rot, Blau und
+   Gold und einem Zepter mit Pik-Spitze. Als <symbol> einmal definiert und
+   oben sowie gespiegelt unten per <use> eingesetzt. Farben über Klassen. */
+const QUEEN_SVG = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <pattern id="pqDots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1" class="pa-paper"/></pattern>
+  <pattern id="pqScroll" width="10" height="8" patternUnits="userSpaceOnUse"><path d="M0 6 q2.5 -5 5 0 q2.5 5 5 0" fill="none" class="pa-sline"/></pattern>
+  <pattern id="pqZig" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M0 6 L3 1 L6 6Z" class="pa-ink"/></pattern>
+  <symbol id="pcQueen" viewBox="0 0 120 170">
+    <path d="M37 60 C30 86 32 112 40 128 L56 120 L55 66 Z" class="pa-gold pa-line"/>
+    <path d="M83 60 C90 86 88 112 80 128 L64 120 L65 66 Z" class="pa-gold pa-line"/>
+    <path d="M41 76 C38 92 40 108 45 120 M45 70 C43 88 45 104 49 116 M79 76 C82 92 80 108 75 120 M75 70 C77 88 75 104 71 116" fill="none" class="pa-sline"/>
+    <path d="M6 170 C8 142 28 125 60 122 C92 125 112 142 114 170 Z" class="pa-red pa-line"/>
+    <path d="M6 170 C8 142 28 125 60 122 C92 125 112 142 114 170 Z" fill="url(#pqScroll)" opacity=".55"/>
+    <path d="M6 170 C8 152 16 139 28 131 L40 170 Z" class="pa-blue pa-line"/>
+    <path d="M6 170 C8 152 16 139 28 131 L40 170 Z" fill="url(#pqDots)"/>
+    <path d="M114 170 C112 152 104 139 92 131 L80 170 Z" class="pa-blue pa-line"/>
+    <path d="M114 170 C112 152 104 139 92 131 L80 170 Z" fill="url(#pqDots)"/>
+    <path d="M30 129 C44 142 76 142 90 129 L86 123 C72 135 48 135 34 123 Z" class="pa-gold pa-line"/>
+    <path d="M50 170 L60 137 L70 170 Z" class="pa-gold pa-line"/>
+    <path d="M50 170 L60 137 L70 170 Z" fill="url(#pqZig)" opacity=".85"/>
+    <rect x="54" y="98" width="12" height="28" class="pa-skin pa-line"/>
+    <ellipse cx="60" cy="79" rx="15.5" ry="19.5" class="pa-skin pa-line"/>
+    <path d="M44.5 72 C47 60 73 60 75.5 72 C70 66 50 66 44.5 72 Z" class="pa-gold pa-line"/>
+    <path d="M50 73.5 q4 -3 8 -.5 M62 73 q4 -2.5 8 .5" fill="none" class="pa-sline"/>
+    <path d="M50.5 78 q3.8 2.2 7.6 0 M61.9 78 q3.8 2.2 7.6 0" fill="none" class="pa-sline"/>
+    <circle cx="54.3" cy="78.6" r="1.1" class="pa-ink"/><circle cx="65.7" cy="78.6" r="1.1" class="pa-ink"/>
+    <path d="M60 79 L58.3 87.5 L61.2 88.3" fill="none" class="pa-sline"/>
+    <path d="M56 92.5 q4 2.6 8 0 q-4 -1.2 -8 0Z" class="pa-red"/>
+    <circle cx="51.5" cy="86" r="3" class="pa-red" opacity=".22"/><circle cx="68.5" cy="86" r="3" class="pa-red" opacity=".22"/>
+    <path d="M42 60 L40 41 L49 51 L55 36 L60 49 L65 36 L71 51 L80 41 L78 60 Z" class="pa-gold pa-line"/>
+    <path d="M42 58 H78 L78.6 64 H41.4 Z" class="pa-gold pa-line"/>
+    <circle cx="40" cy="40" r="2.4" class="pa-paper pa-line"/><circle cx="55" cy="35" r="2.4" class="pa-paper pa-line"/>
+    <circle cx="65" cy="35" r="2.4" class="pa-paper pa-line"/><circle cx="80" cy="40" r="2.4" class="pa-paper pa-line"/>
+    <circle cx="50" cy="61" r="1.7" class="pa-red"/><circle cx="60" cy="61" r="1.9" class="pa-blue"/><circle cx="70" cy="61" r="1.7" class="pa-red"/>
+    <path d="M60 46 l3 4 -3 4 -3 -4Z" class="pa-red pa-line"/>
+    <path d="M45 125 C52 131 68 131 75 125" fill="none" class="pa-dash"/>
+    <path d="M100 168 L104.5 62" class="pa-rod"/><path d="M100 168 L104.5 62" class="pa-rodin"/>
+    <path d="M104.5 44 C101 49 96 52 96 56.5 A4.2 4.2 0 0 0 103.6 58.8 C103.4 60.6 102.8 62 101.6 63.4 H107.4 C106.2 62 105.6 60.6 105.4 58.8 A4.2 4.2 0 0 0 113 56.5 C113 52 108 49 104.5 44Z" class="pa-ink"/>
+    <circle cx="104.3" cy="66" r="2.4" class="pa-gold pa-line"/>
+    <ellipse cx="100.5" cy="142" rx="6.5" ry="5" class="pa-skin pa-line"/>
+    <path d="M95 141 q5.5 -2 11 0" fill="none" class="pa-sline"/>
+  </symbol></defs></svg>`;
+
 function renderHomeCard() {
   const total = bankroll('all');
-  const idx = (total < 0 ? '−' : '') + nf0.format(Math.abs(Math.round(total)));
-  const corner = (hidden) => `<div class="pc-index${hidden ? ' pc-index-rot' : ''}"${hidden ? ' aria-hidden="true"' : ''}>
-      <span class="pc-num ${total < 0 ? 'down' : ''}">${idx}</span><span class="pc-lbl">Euro Bankroll</span></div>`;
+  const pip = (cls) => `<svg aria-hidden="true" class="${cls}" viewBox="0 0 24 24">${SUITS.cash}</svg>`;
+  /* Eckindex wie auf einer echten Karte: Buchstabe über dem Farbsymbol.
+     Rein schmückend, die Zahlen stehen lesbar im Bild. */
+  const corner = (rot) => `<div class="pc-corner${rot ? ' pc-corner-rot' : ''}" aria-hidden="true">
+      <span class="pc-q">Q</span>${pip('pc-cpip')}</div>`;
+  /* Kartenhälfte: großes Pik mit Bankroll und die Dame. Unten dieselbe
+     Hälfte um 180° gedreht, wie bei Hofkarten (punktsymmetrisch). */
+  const half = (rot) => `<div class="pc-half${rot ? ' pc-half-rot' : ''}"${rot ? ' aria-hidden="true"' : ''}>
+      <div class="pc-head">
+        ${pip('pc-bigpip')}
+        <span class="pc-lbl">Bankroll</span>
+        <span class="pc-num ${total < 0 ? 'down' : ''}">${money(total)}</span>
+      </div>
+      <svg class="pc-queen" viewBox="0 0 120 170" preserveAspectRatio="xMaxYMax meet" aria-hidden="true"><use href="#pcQueen"/></svg>
+    </div>`;
 
   /* Die Karte ist die ganze Startseite: keine Sessionliste, kein eigener
      Knopf (neue Session über ＋ in der Leiste). Der Hinweis zur Sicherung
-     steht über der Karte, damit fitCard() ihn bei der Höhe mitrechnet. */
-  $('#homeAlt').innerHTML = `
+     steht über der Karte, damit fitCard() ihn bei der Höhe mitrechnet.
+     Die beiden Rückseiten hinter der Karte geben dem Stapel Tiefe. */
+  $('#homeAlt').innerHTML = `${QUEEN_SVG}
     <div class="notice hidden" id="backupNoteAlt"></div>
-    <div class="pc-card" id="pcCard"><div class="pc-face">
-      ${corner(false)}
-      <div class="pc-rows">${TYPE_KEYS.map((k) => `<button class="pc-row" data-roll-open="${k}">
-          <svg aria-hidden="true" class="pc-suit pc-suit-${k}" viewBox="0 0 24 24">${SUITS[k]}</svg>
-          <span class="pc-name">${TYPES[k].label}</span>
-          <span class="pc-val ${bankroll(k) < 0 ? 'down' : ''}">${money(bankroll(k))}</span>
-        </button>`).join('')}</div>
-      ${corner(true)}
-    </div></div>`;
+    <div class="pc-card" id="pcCard">
+      <div class="pc-back pc-back-1" aria-hidden="true"></div>
+      <div class="pc-back pc-back-2" aria-hidden="true"></div>
+      <div class="pc-face">
+        ${corner(false)}
+        <div class="pc-court">
+          ${half(false)}
+          <div class="pc-plaque">${TYPE_KEYS.map((k) => `<button class="pc-row" data-roll-open="${k}">
+              <svg aria-hidden="true" class="pc-suit pc-suit-${k}" viewBox="0 0 24 24">${SUITS[k]}</svg>
+              <span class="pc-name">${TYPES[k].label}</span>
+              <span class="pc-val ${bankroll(k) < 0 ? 'down' : ''}">${money(bankroll(k))}</span>
+            </button>`).join('')}</div>
+          ${half(true)}
+        </div>
+        ${corner(true)}
+      </div>
+    </div>`;
   renderBackupHint($('#backupNoteAlt'));
 }
 
