@@ -384,6 +384,7 @@
   --pc-frame:#24459c; --pc-ink:#17171a; --pc-red:#c0322a; --pc-gold:#e8b93a;
   --pc-back:#b3261e; --pc-back-line:rgba(255,255,255,.28);
   --pc-skin:#f8ead4; --pc-glow:rgba(232,185,58,.10);
+  --pc-hair-dark:#5b3a22; --pc-hair-red:#b4532a;
   --pc-frame-soft:rgba(36,69,156,.32); --pc-edge-soft:#d8d3c6;
 
   --r-xs:6px; --r-sm:10px; --r:12px; --r-lg:16px; --r-xl:18px;
@@ -1121,23 +1122,15 @@ fieldset{border:0;padding:0;margin:0}
 .pc-card{
   container-type:size; container-name:pc;
   position:relative; height:var(--pc-h, calc(100svh - 170px)); min-height:200px;
-  padding:6px 8px 8px;
+  padding:6px 8px 24px;touch-action:pan-y;user-select:none;-webkit-user-select:none;
 }
-/* Zwei Rückseiten unter der Karte, leicht verdreht: ein Stapel auf dem Tisch. */
-.pc-back{position:absolute;inset:8px 10px 10px;border-radius:clamp(10px,4.5cqmin,22px);
-  background:
-    repeating-linear-gradient(45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
-    repeating-linear-gradient(-45deg,transparent 0 6px,var(--pc-back-line) 6px 7px),
-    var(--pc-back);
-  border:clamp(5px,2.2cqmin,10px) solid var(--pc-paper);
-  box-shadow:0 1px 2px var(--pc-shadow),0 6px 18px var(--pc-shadow)}
-.pc-back-1{transform:rotate(-2.2deg) translate(-2px,3px)}
-.pc-back-2{transform:rotate(1.4deg) translate(2px,2px)}
+.pc-stack{position:relative;height:100%}
 
-/* Vorderseite: Kartenkarton mit Lichteinfall von links oben, feiner
-   Leinenstruktur und weichem Schlagschatten. */
+/* Drei Damen als Stapel. Platz 0 liegt oben, die anderen schauen leicht
+   verdreht darunter hervor. --pc-pull (0 bis 1, beim Wischen) hebt die
+   nächste Karte schon ein Stück an. */
 .pc-face{
-  position:relative;height:100%;
+  position:absolute;inset:0;
   display:grid;grid-template-columns:clamp(30px,11cqmin,64px) minmax(0,1fr) clamp(30px,11cqmin,64px);
   grid-template-rows:minmax(0,1fr);
   padding:clamp(10px,4cqmin,26px) 0;
@@ -1150,7 +1143,37 @@ fieldset{border:0;padding:0;margin:0}
   border:1px solid var(--pc-edge);
   box-shadow:inset 0 1px 0 var(--pc-light),inset 0 -2px 6px var(--pc-inner),
     0 1px 1px var(--pc-shadow),0 10px 28px var(--pc-shadow-2);
+  transition:transform .48s cubic-bezier(.2,.9,.25,1.12),filter .3s ease;
+  will-change:transform;
 }
+.pc-face[data-pos="0"]{z-index:3}
+.pc-face[data-pos="1"]{z-index:2;filter:brightness(.97);
+  transform:translate(calc(-4px + var(--pc-pull,0) * 4px),calc(5px - var(--pc-pull,0) * 5px))
+    rotate(calc(-2.4deg + var(--pc-pull,0) * 2.4deg)) scale(calc(.975 + var(--pc-pull,0) * .025))}
+.pc-face[data-pos="2"]{z-index:1;filter:brightness(.94);
+  transform:translate(4px,4px) rotate(1.8deg) scale(.955)}
+/* Beim Ziehen folgt die Karte ohne Verzögerung, beim Wegwerfen beschleunigt sie. */
+.pc-face.pc-drag{transition:none;cursor:grabbing}
+.pc-face.pc-noanim{transition:none}
+.pc-face.pc-throw{transition:transform .3s cubic-bezier(.5,0,.9,.5);z-index:4}
+.pc-face[data-pos="0"]:not(.pc-drag){cursor:grab}
+
+/* Punkte unter dem Stapel: zeigen die Karte und blättern beim Antippen */
+.pc-dots{position:absolute;left:0;right:0;bottom:0;height:22px;display:flex;justify-content:center;gap:4px}
+.pc-dot{width:28px;height:22px;border:0;background:transparent;padding:0;display:grid;place-items:center}
+.pc-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--pc-edge);
+  transition:width .25s ease,background .25s ease}
+.pc-dot.on::before{width:20px;border-radius:4px;background:var(--pc-ink)}
+
+/* Farben je Dame: Gewand, Ärmel, Haar, Zepterspitze, Farbsymbol */
+.pc-q-cash{--q-gown:var(--pc-red);--q-sleeve:var(--pc-frame);--q-hair:var(--pc-gold);--q-sp:1;--q-cl:0;--q-di:0}
+.pc-q-mtt{--q-gown:var(--pc-frame);--q-sleeve:var(--pc-red);--q-hair:var(--pc-hair-dark);--q-sp:0;--q-cl:1;--q-di:0}
+.pc-q-casino{--q-gown:var(--pc-gold);--q-sleeve:var(--pc-frame);--q-hair:var(--pc-hair-red);--q-sp:0;--q-cl:0;--q-di:1}
+.pa-gown{fill:var(--q-gown,var(--pc-red))} .pa-sleeve{fill:var(--q-sleeve,var(--pc-frame))}
+.pa-hair{fill:var(--q-hair,var(--pc-gold))}
+.pa-fin-sp{opacity:var(--q-sp,1)} .pa-fin-cl{opacity:var(--q-cl,0)} .pa-fin-di{opacity:var(--q-di,0)}
+.pc-pip-casino{fill:var(--pc-suit-red) !important}
+
 /* Eckindex: Buchstabe über Pik, in der Randspalte neben dem Bildfeld. */
 .pc-corner{display:flex;flex-direction:column;align-items:center;justify-self:center;align-self:start;
   line-height:.9;color:var(--text)}
@@ -1192,37 +1215,33 @@ fieldset{border:0;padding:0;margin:0}
   white-space:nowrap;margin-top:.12em}
 
 /* Schild in der Mitte: weiß, Tusche- und Goldlinie, leicht erhaben. Es
-   liegt auf der Trennlinie der beiden Hälften wie das Band einer Hofkarte. */
-.pc-plaque{position:relative;z-index:2;align-self:center;justify-self:center;width:min(100%,520px);
-  display:flex;flex-direction:column;margin:clamp(4px,1.4cqmin,12px) 0;
-  padding:clamp(2px,1cqmin,8px) clamp(10px,3.4cqmin,24px);
+   liegt auf der Trennlinie der beiden Hälften wie das Band einer Hofkarte
+   und trägt die eine Bankroll dieser Karte. */
+.pc-plaque{position:relative;z-index:2;align-self:center;justify-self:center;width:min(100%,460px);
+  margin:clamp(4px,1.4cqmin,12px) 0;
   background:var(--pc-paper);border:1.5px solid var(--pc-ink);border-radius:6px;
   box-shadow:inset 0 0 0 3px var(--pc-paper),inset 0 0 0 4.5px var(--pc-gold),0 3px 10px var(--pc-shadow-2)}
-.pc-row{min-height:clamp(42px,10cqmin,80px);border:0;border-bottom:1px solid var(--line-soft);
-  background:transparent;padding:0;display:flex;align-items:center;gap:clamp(8px,3cqmin,20px);
-  text-align:left;min-width:0;transition:background var(--fast)}
-.pc-row:active{background:var(--surface-2)}
-.pc-row:last-child{border-bottom:0}
-.pc-suit{flex:none;width:clamp(20px,6.5cqmin,46px);height:clamp(20px,6.5cqmin,46px);fill:var(--pc-suit-black)}
-.pc-suit-casino{fill:var(--pc-suit-red)}
-.pc-name{flex:1;min-width:0;font-size:clamp(14px,4.2cqmin,26px);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pc-val{flex:none;font-family:"DM Serif Display",Georgia,serif;font-size:clamp(18px,6.2cqmin,46px);
-  white-space:nowrap;font-variant-numeric:tabular-nums}
+.pc-main{width:100%;border:0;background:transparent;border-radius:5px;
+  padding:clamp(10px,3.4cqmin,24px) clamp(12px,4cqmin,28px);
+  display:flex;flex-direction:column;align-items:center;gap:clamp(2px,1cqmin,8px);text-align:center;
+  transition:background var(--fast)}
+.pc-main:active{background:var(--surface-2)}
+.pc-kind{display:flex;align-items:center;gap:.45em;font-size:clamp(12px,3.6cqmin,22px);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.pc-suit{flex:none;width:1.25em;height:1.25em;fill:var(--pc-suit-black)}
+.pc-big{font-family:"DM Serif Display",Georgia,serif;font-size:clamp(30px,11cqmin,84px);line-height:1.05;
+  white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.pc-sub{font-size:clamp(12px,3.4cqmin,20px);color:var(--muted)}
 
 /* Quer oder breit: Hälften links und rechts, Schild in der Mitte als
    Liste (nebeneinander würden Namen und Beträge abgeschnitten). */
 @container pc (min-aspect-ratio: 5/4){
   .pc-court{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-  .pc-half{flex-direction:row}
-  .pc-plaque{width:auto;min-width:min(46cqw,300px);max-width:52cqw;margin:0 clamp(6px,2cqw,20px)}
-  .pc-row{min-height:clamp(30px,13cqh,64px)}
-  .pc-name{font-size:clamp(13px,min(2.6cqw,7cqh),22px)}
-  .pc-val{font-size:clamp(16px,min(3.4cqw,9cqh),38px)}
-  .pc-suit{width:clamp(16px,8cqh,36px);height:clamp(16px,8cqh,36px)}
+  .pc-plaque{width:auto;min-width:min(40cqw,280px);max-width:50cqw;margin:0 clamp(6px,2cqw,20px)}
+  .pc-big{font-size:clamp(24px,min(6cqw,16cqh),72px)}
+  .pc-kind{font-size:clamp(11px,min(2.2cqw,6cqh),18px)}
+  .pc-sub{font-size:clamp(11px,min(2cqw,5.5cqh),16px)}
   .pc-bigpip{width:clamp(22px,14cqh,80px);height:clamp(22px,14cqh,80px)}
-  .pc-num{font-size:clamp(16px,min(3.2cqw,10cqh),44px)}
-  .pc-lbl{font-size:clamp(9px,3.4cqh,15px)}
 }
 /* Handy quer: die Spalte von 560 px wäre hier eine schmale Insel, die
    Karte nutzt deshalb die volle Breite. */
