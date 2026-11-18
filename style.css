@@ -1153,6 +1153,7 @@ fieldset{border:0;padding:0;margin:0}
   box-shadow:inset 0 1px 0 var(--pc-light),inset 0 -2px 6px var(--pc-inner),
     0 1px 1px var(--pc-shadow),0 10px 28px var(--pc-shadow-2);
   will-change:transform,opacity;
+  backface-visibility:hidden;contain:layout paint style;
 }
 .pc-face{visibility:hidden;z-index:1}
 .pc-face.is-top{visibility:visible;z-index:3}
@@ -1162,12 +1163,16 @@ fieldset{border:0;padding:0;margin:0}
 .pc-face.pc-drag{cursor:grabbing}
 .pc-face.is-top:not(.pc-drag){cursor:grab}
 
-/* Punkte unter dem Stapel: zeigen die Karte und blättern beim Antippen */
-.pc-dots{position:absolute;left:0;right:0;bottom:0;height:22px;display:flex;justify-content:center;gap:4px}
+/* Punkte unter dem Stapel: zeigen die Karte und blättern beim Antippen.
+   Ein Balken liegt über dem aktiven Punkt; --dp ist seine Position
+   (0, 1, 2 oder dazwischen, während der Finger wischt). */
+.pc-dots{position:absolute;left:50%;bottom:0;height:22px;display:flex;transform:translateX(-50%)}
 .pc-dot{width:28px;height:22px;border:0;background:transparent;padding:0;display:grid;place-items:center}
-.pc-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--pc-edge);
-  transition:width .25s ease,background .25s ease}
-.pc-dot.on::before{width:20px;border-radius:4px;background:var(--pc-ink)}
+.pc-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--pc-edge)}
+.pc-dot-pill{position:absolute;left:4px;top:7.5px;width:20px;height:7px;border-radius:4px;background:var(--pc-ink);
+  pointer-events:none;transform:translateX(calc(var(--dp,0) * 28px));
+  transition:transform .22s cubic-bezier(.2,.9,.3,1)}
+.pc-dots-live .pc-dot-pill{transition:none}
 
 /* Farben je Dame: Gewand, Ärmel, Haar, Zepterspitze, Farbsymbol */
 .pc-q-cash{--q-gown:var(--pc-red);--q-sleeve:var(--pc-frame);--q-hair:var(--pc-gold);--q-sp:1;--q-cl:0;--q-di:0}

@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.5.2';
+const APP_VERSION = '2.5.3';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -665,8 +665,9 @@ function renderHomeCard() {
         <div class="pc-deck pc-deck-1" aria-hidden="true"></div>
         ${TYPE_KEYS.map(face).join('')}
       </div>
-      <div class="pc-dots" role="tablist" aria-label="Bereich wählen">${TYPE_KEYS.map((k, i) =>
-        `<button class="pc-dot" role="tab" data-card="${i}" aria-label="${TYPES[k].label}"></button>`).join('')}</div>
+      <div class="pc-dots" id="pcDots" role="tablist" aria-label="Bereich wählen">${TYPE_KEYS.map((k, i) =>
+        `<button class="pc-dot" role="tab" data-card="${i}" aria-label="${TYPES[k].label}"></button>`).join('')}
+        <span class="pc-dot-pill" aria-hidden="true"></span></div>
     </div>`;
   renderBackupHint($('#backupNoteAlt'));
   showCard();
@@ -681,11 +682,17 @@ function showCard() {
     f.inert = !on;                       // nur die offene Karte ist bedienbar
     f.style.transform = ''; f.style.opacity = '';
   });
-  $$('#pcCard .pc-dot').forEach((d) => {
-    const on = Number(d.dataset.card) === cardIdx;
-    d.classList.toggle('on', on);
-    d.setAttribute('aria-selected', on);
-  });
+  setDots(cardIdx, false);
+}
+
+/** Balken der Punktleiste an Position pos (darf zwischen zwei Punkten
+    liegen). live = folgt dem Finger ohne Übergang. */
+function setDots(pos, live) {
+  const box = $('#pcDots'); if (!box) return;
+  box.classList.toggle('pc-dots-live', !!live);
+  box.style.setProperty('--dp', pos.toFixed(3));
+  const at = Math.round(pos);
+  $$('.pc-dot', box).forEach((d) => d.setAttribute('aria-selected', Number(d.dataset.card) === at));
 }
 
 let cardBusy = false;
@@ -713,7 +720,7 @@ function hideUnder(f) {
     (-1 links, 1 rechts) aus dem Bild, und gleichzeitig legt sich die neue
     Karte, die schon darunter aufgedeckt wird, fertig hin. Beim Wischen
     beginnt beides dort, wo der Finger die Karten gelassen hat. */
-async function goCard(i, dir, from) {
+async function goCard(i, dir, from, speed) {
   const n = TYPE_KEYS.length;
   i = (i + n) % n;
   const stack = $('#pcStack');
@@ -724,20 +731,24 @@ async function goCard(i, dir, from) {
   if (!old || !nu || i === cardIdx) { showCard(); return; }
   if (calm() || !old.animate) { cardIdx = i; showCard(); return; }
   cardBusy = true;
+  setDots(i, false);                    // Punkte springen sofort ans Ziel
   const w = stack.clientWidth;
+  // Restweg bis aus dem Bild; mit Schwung geworfen geht es schneller.
+  const left = Math.max(0, w * 1.25 - Math.abs(parseFloat((from || '').replace('translate(', '')) || 0));
+  const dur = Math.round(Math.min(300, Math.max(170, left / Math.max(1.6, speed || 0))));
   if (!nu.classList.contains('is-under')) revealUnder(nu, 0);
   const nuFrom = { transform: nu.style.transform, opacity: nu.style.opacity || '0' };
   try {
     const out = old.animate([
       { transform: from || 'none', opacity: 1 },
       { transform: `translate(${dir * w * 1.25}px, ${-w * 0.08}px) rotate(${dir * 14}deg)`, opacity: 0 },
-    ], { duration: 300, easing: 'cubic-bezier(.45,0,.85,.4)', fill: 'forwards' });
+    ], { duration: dur, easing: from ? 'cubic-bezier(.25,.5,.5,1)' : 'cubic-bezier(.45,0,.85,.4)', fill: 'forwards' });
     // Ohne Wischen (Punkt angetippt) startet die neue Karte, sobald die alte
     // ein Stück unterwegs ist; nach dem Wischen sofort.
     const into = nu.animate([
       nuFrom,
       { transform: 'none', opacity: 1 },
-    ], { duration: 340, delay: from ? 0 : 90, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+    ], { duration: dur + 40, delay: from ? 0 : 70, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'forwards' });
     await Promise.all([out.finished, into.finished]);
     old.getAnimations().forEach((a) => a.cancel());
     nu.getAnimations().forEach((a) => a.cancel());
@@ -756,13 +767,15 @@ async function goCard(i, dir, from) {
 function wireCardSwipe() {
   const card = $('#pcCard'); if (!card) return;
   const n = TYPE_KEYS.length;
-  let x0 = 0, y0 = 0, t0 = 0, dx = 0, drag = false, axis = null, swallow = false, top = null, under = null;
+  let x0 = 0, y0 = 0, dx = 0, drag = false, axis = null, swallow = false, top = null, under = null;
+  let raf = 0, lastX = 0, lastT = 0, vel = 0;
   const target = (d) => (cardIdx + (d < 0 ? 1 : -1) + n) % n;
   card.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.pc-dot')) return;
     if (cardBusy) return;
     top = card.querySelector('.pc-face.is-top'); if (!top) return;
-    x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); dx = 0; drag = true; axis = null; under = null;
+    x0 = lastX = e.clientX; y0 = e.clientY; lastT = performance.now(); dx = 0; vel = 0;
+    drag = true; axis = null; under = null;
   });
   card.addEventListener('pointermove', (e) => {
     if (!drag) return;
@@ -774,28 +787,45 @@ function wireCardSwipe() {
     }
     if (axis !== 'x') return;
     dx = mx;
-    top.style.transform = `translate(${dx}px, ${Math.abs(dx) * -0.04}px) rotate(${dx * 0.045}deg)`;
-    if (dx) {
-      under = card.querySelector(`.pc-face[data-i="${target(dx)}"]`);
-      revealUnder(under, Math.min(1, Math.abs(dx) / (card.clientWidth * 0.6)));
-    }
+    // Geschwindigkeit der letzten Bewegung (px/ms), geglättet, für den Wurf.
+    const now = performance.now();
+    if (now > lastT) vel = vel * 0.6 + ((e.clientX - lastX) / (now - lastT)) * 0.4;
+    lastX = e.clientX; lastT = now;
+    // Zeichnen höchstens einmal je Bildwechsel.
+    if (!raf) raf = requestAnimationFrame(paint);
   });
+  const paint = () => {
+    raf = 0;
+    if (!drag || axis !== 'x') return;
+    top.style.transform = `translate(${dx}px, ${Math.abs(dx) * -0.04}px) rotate(${dx * 0.045}deg)`;
+    if (!dx) return;
+    const t = target(dx), p = Math.min(1, Math.abs(dx) / (card.clientWidth * 0.6));
+    under = card.querySelector(`.pc-face[data-i="${t}"]`);
+    revealUnder(under, p);
+    // Der Balken der Punktleiste wandert mit dem Finger Richtung Ziel.
+    setDots(cardIdx + (t - cardIdx) * Math.min(1, Math.abs(dx) / (card.clientWidth * 0.45)), true);
+  };
   const end = () => {
     if (!drag) return;
     drag = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (axis !== 'x') return;
     top.classList.remove('pc-drag');
     swallow = true; setTimeout(() => { swallow = false; }, 50);   // kein Antippen nach dem Wischen
-    const v = Math.abs(dx) / Math.max(1, performance.now() - t0);
-    if (Math.abs(dx) > Math.min(card.clientWidth * 0.25, 110) || (v > 0.5 && Math.abs(dx) > 30)) {
-      // Links wischen: nächste Karte, rechts: vorige.
-      goCard(target(dx), dx < 0 ? -1 : 1, top.style.transform);
+    // Schwung zählt nur, wenn er in Wischrichtung zeigt.
+    const flick = Math.sign(vel) === Math.sign(dx) && Math.abs(vel) > 0.45 && Math.abs(dx) > 24;
+    if (Math.abs(dx) > Math.min(card.clientWidth * 0.25, 110) || flick) {
+      // Links wischen: nächste Karte, rechts: vorige. Letzte Lage zuerst
+      // zeichnen, damit der Wurf genau dort ansetzt.
+      top.style.transform = `translate(${dx}px, ${Math.abs(dx) * -0.04}px) rotate(${dx * 0.045}deg)`;
+      goCard(target(dx), dx < 0 ? -1 : 1, top.style.transform, Math.abs(vel));
     } else if (top.animate && !calm()) {
       // Zurückfedern, die darunter aufgedeckte Karte verschwindet wieder.
       const from = top.style.transform;
       top.style.transform = '';
       top.animate([{ transform: from }, { transform: 'none' }],
-        { duration: 300, easing: 'cubic-bezier(.2,1.3,.4,1)' });
+        { duration: 280, easing: 'cubic-bezier(.2,1.25,.4,1)' });
+      setDots(cardIdx, false);
       if (under) {
         const u = under, uf = { transform: u.style.transform, opacity: u.style.opacity };
         u.animate([uf, { transform: underPose(0), opacity: 0 }], { duration: 220, easing: 'ease-out' })
