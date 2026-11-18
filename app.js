@@ -9,7 +9,7 @@
 const KEY = 'pokertracker.v1';
 /* Bei jeder Änderung hochzählen — wird in den Einstellungen angezeigt,
    damit sich auf dem Handy prüfen lässt, welche Fassung wirklich läuft. */
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.1.0';
 
 /* Darstellung. `bar` ist die Hintergrundfarbe des Themes und landet im
    <meta name="theme-color">, damit die Systemleiste des Handys mitzieht —
@@ -24,6 +24,19 @@ const THEMES = {
   blossom:  { label: 'Blossom',  note: 'Sanftes Hell, Rosé', bar: '#faf3f2' },
 };
 const THEME_KEYS = Object.keys(THEMES);
+
+/* Designs. „Klassisch" ist die bisherige Oberfläche mit den Farbschemata oben.
+   Kurve und Monatsblatt (aus dem Entwurf „PWA Startseiten") bringen eigene
+   Farben, Schriften und eine eigene Übersicht mit — das Farbschema ruht dann.
+   Wer nichts umstellt, bleibt klassisch. `bar` muss --bg in style.css
+   entsprechen, wie bei THEMES. */
+const UI_KEY = 'pokertracker.ui';
+const UIS = {
+  classic: { label: 'Klassisch',   note: 'Bisheriges Design, mit Farbschema', bar: null },
+  curve:   { label: 'Kurve',       note: 'Dunkel, Verlauf im Mittelpunkt',    bar: '#111315' },
+  month:   { label: 'Monatsblatt', note: 'Hell, Kalender mit Spieltagen',     bar: '#f7f6f2' },
+};
+const UI_KEYS = Object.keys(UIS);
 
 const TYPES = {
   cash:   { label: 'Cash Game', short: 'CASH', em: '♠️' },
@@ -65,6 +78,7 @@ const blank = () => ({
   playerTags: ['Callt zu viel', 'Foldet zu viel', '3-Bettet light', 'Bluffed oft',
     'Limpt', 'Tiltet schnell', 'Spielt Position', 'Overbets', 'Nur Premium'],
   theme: 'midnight',   // Darstellung, siehe THEMES
+  ui: 'classic',       // Design, siehe UIS; Farbschema gilt nur bei 'classic'
   setup: false,        // Start-Bankroll schon abgefragt?
   lastBackup: null,    // ISO-Datum des letzten Backups
   lastBackupCount: 0,  // Anzahl Einträge zu dem Zeitpunkt
@@ -133,6 +147,7 @@ function normalize(src) {
   TYPE_KEYS.forEach((k) => { d.defaults.location[k] = defLoc[k] || ''; });
 
   if (!THEMES[d.theme]) d.theme = 'midnight';
+  if (!UIS[d.ui]) d.ui = 'classic';
   d.v = base.v;
   return d;
 }
@@ -158,11 +173,29 @@ function save() {
 function applyTheme(t) {
   if (!THEMES[t]) t = 'midnight';
   db.theme = t;
-  document.documentElement.dataset.theme = t;
-  const meta = $('meta[name="theme-color"]');
-  if (meta) meta.content = THEMES[t].bar;
   try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* nicht schlimm */ }
+  applyLook();
 }
+
+/** Design und Farbschema aufs Dokument legen. Kurve und Monatsblatt laufen
+    in style.css als eigene data-theme-Werte: so greift keine der
+    Theme-Sonderregeln (Tabbar-Silhouetten) aus Versehen mit. Das gewählte
+    Farbschema bleibt in db.theme stehen und kommt beim Zurückschalten wieder. */
+function applyLook() {
+  const u = UIS[db.ui] ? db.ui : 'classic';
+  const root = document.documentElement;
+  if (u === 'classic') { root.dataset.theme = db.theme; delete root.dataset.ui; }
+  else { root.dataset.theme = u; root.dataset.ui = u; }
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = UIS[u].bar || THEMES[db.theme].bar;
+  try { localStorage.setItem(UI_KEY, u); } catch (e) { /* nicht schlimm */ }
+}
+
+function applyUi(u) {
+  db.ui = UIS[u] ? u : 'classic';
+  applyLook();
+}
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ── Formatierung ───────────────────────────────────────────── */
@@ -298,7 +331,8 @@ function nav(v) {
   view = v;
   $$('.view').forEach((s) => s.classList.toggle('hidden', s.id !== 'view-' + v));
   $$('.tabbar button[data-nav]').forEach((b) => b.classList.toggle('on', b.dataset.nav === v));
-  $('#viewTitle').textContent = TITLES[v];
+  // Kurve und Monatsblatt haben auf der Übersicht einen eigenen Kopf.
+  $('#viewTitle').textContent = v === 'home' && db.ui !== 'classic' ? '' : TITLES[v];
   window.scrollTo(0, 0);
   render();
 }
@@ -334,18 +368,20 @@ function backupHint() {
   return null;
 }
 
-function renderBackupHint() {
-  const box = $('#backupNote'); if (!box) return;
+function renderBackupHint(box = $('#backupNote')) {
+  if (!box) return;
   const msg = backupHint();
   box.classList.toggle('hidden', !msg);
   if (!msg) return;
   box.innerHTML = `<div class="notice-t">${esc(msg)}</div>
-    <button class="btn btn-sm" id="noteSave">Sichern</button>
-    <button class="link" id="noteHide" aria-label="Ausblenden">✕</button>`;
-  $('#noteSave').onclick = exportBackup;
-  $('#noteHide').onclick = () => {
+    <button class="btn btn-sm note-save">Sichern</button>
+    <button class="link note-hide" aria-label="Ausblenden">✕</button>`;
+  // Im Kasten suchen, nicht global: die klassische Übersicht und die der
+  // anderen Designs haben je einen eigenen Hinweiskasten.
+  box.querySelector('.note-save').onclick = exportBackup;
+  box.querySelector('.note-hide').onclick = () => {
     db.snoozeBackup = Date.now() + 14 * 864e5;
-    save(); renderBackupHint();
+    save(); renderBackupHint(box);
   };
 }
 
@@ -353,6 +389,11 @@ function renderBackupHint() {
 let chartKey = 'all';
 
 function renderHome() {
+  const alt = db.ui !== 'classic';
+  $('#homeClassic').classList.toggle('hidden', alt);
+  $('#homeAlt').classList.toggle('hidden', !alt);
+  if (db.ui === 'curve') return renderHomeCurve();
+  if (db.ui === 'month') return renderHomeMonth();
   renderBackupHint();
   const total = bankroll('all');
   $('#totalBankroll').textContent = money(total);
@@ -402,6 +443,251 @@ function subLine(s) {
   }
   if (num(s.durationMin)) bits.push(fmtDur(num(s.durationMin)));
   return bits.join(' · ') || '—';
+}
+
+/* ── Übersicht der Designs Kurve und Monatsblatt ────────────── */
+/* Beide zeigen den laufenden Kalendermonat als Bezugsrahmen — „seit dem
+   1." ist die Frage, die man sich am Tisch stellt, nicht „seit Beginn". */
+const dfMonthName = new Intl.DateTimeFormat('de-DE', { month: 'long' });
+const dfDayLong = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+const pad2 = (n) => String(n).padStart(2, '0');
+const dayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/** Sessions eines Kalendermonats (m: 0 bis 11), neueste zuerst. */
+function monthSessions(y, m) {
+  const a = new Date(y, m, 1), b = new Date(y, m + 1, 1);
+  return db.sessions.filter((s) => { const d = new Date(s.date); return d >= a && d < b; })
+    .sort((p, q) => new Date(q.date) - new Date(p.date));
+}
+
+/** Kurzbeschreibung einer Session in einer Zeile, ohne Ort. */
+function altLine(s) {
+  const bits = [];
+  if (s.type === 'cash') bits.push('Cash' + (s.stakes ? ' ' + esc(s.stakes) : ''));
+  else if (s.type === 'mtt') {
+    bits.push(num(s.place)
+      ? `Turnier, Platz ${num(s.place)}${num(s.fieldSize) ? ' von ' + num(s.fieldSize) : ''}`
+      : 'Turnier');
+  } else bits.push(esc(s.location) || 'Casino');
+  if (num(s.durationMin)) bits.push(fmtDur(num(s.durationMin)));
+  return bits.join(', ');
+}
+
+/** Stundenlohn nur über Sessions mit erfasster Dauer, sonst verfälschen
+    Casino-Abende ohne Zeitangabe den Wert. */
+function hourly(list) {
+  const timed = list.filter((s) => num(s.durationMin) > 0);
+  const h = timed.reduce((a, s) => a + hours(s), 0);
+  if (!h) return '—';
+  const v = timed.reduce((a, s) => a + profit(s), 0) / h;
+  return (v < -0.5 ? '−' : '') + nf0.format(Math.abs(v)) + ' €/h';
+}
+
+/** Bankroll je Bereich als Knöpfe, die das Konto des Bereichs öffnen. */
+function altRolls(klass) {
+  return TYPE_KEYS.map((k) => `<button class="${klass}" data-roll-open="${k}">
+      <span class="alt-k">${TYPES[k].label}</span>
+      <span class="alt-v ${bankroll(k) < 0 ? 'down' : ''}">${money(bankroll(k))}</span>
+    </button>`).join('');
+}
+
+/** Großer Knopf: neue Session, bei laufender Session deren Ansicht. */
+function altStartBtn(klass, label) {
+  return `<button class="${klass}" data-act="new">${db.live ? 'Laufende Session öffnen' : label}</button>`;
+}
+
+/* ── Kurve ─────────────────────────────────────────────────── */
+function renderHomeCurve() {
+  const now = new Date();
+  const list = monthSessions(now.getFullYear(), now.getMonth());
+  const mp = list.reduce((a, s) => a + profit(s), 0);
+  const wins = list.filter((s) => profit(s) > 0).length;
+  const total = bankroll('all');
+
+  // Aufteilung als Balken: Bereiche im Minus haben keine Breite.
+  const parts = TYPE_KEYS.map((k) => Math.max(0, bankroll(k)));
+  const sum = parts.reduce((a, v) => a + v, 0);
+  const bar = sum > 0
+    ? TYPE_KEYS.map((k, i) => parts[i] > 0 ? `<span class="cv-seg cv-${k}" style="flex:${parts[i]}"></span>` : '').join('')
+    : '<span class="cv-seg cv-none" style="flex:1"></span>';
+  const barLabel = 'Aufteilung: ' + TYPE_KEYS.map((k) => `${TYPES[k].label} ${money(bankroll(k))}`).join(', ');
+
+  const recent = [...db.sessions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
+
+  $('#homeAlt').innerHTML = `
+    <div class="cv-head">
+      <div class="cv-total">
+        <span class="alt-k">Bankroll</span>
+        <span class="cv-big ${total < 0 ? 'down' : ''}">${money(total)}</span>
+      </div>
+      <div class="cv-month">
+        <span class="cv-delta ${mp < 0 ? 'down' : mp > 0 ? 'acc' : ''}">${signed(mp)}</span>
+        <span class="alt-k">seit 1. ${dfMonthName.format(now)}</span>
+      </div>
+    </div>
+    <div class="notice hidden" id="backupNoteAlt"></div>
+    <div class="cv-chart" id="cvChart"></div>
+    <div class="cv-stats">
+      <div><span class="alt-k">Stundenlohn</span><span class="alt-v">${hourly(list)}</span></div>
+      <div><span class="alt-k">Sessions</span><span class="alt-v">${list.length}</span></div>
+      <div><span class="alt-k">Im Plus</span><span class="alt-v">${list.length ? `${wins} von ${list.length}` : '—'}</span></div>
+    </div>
+    <div class="cv-bar" role="img" aria-label="${esc(barLabel)}">${bar}</div>
+    <div class="cv-rolls">${altRolls('cv-roll')}</div>
+    ${altStartBtn('cv-start', `<svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/></svg>Session starten`)}
+    <div class="cv-recent">
+      <div class="cv-recent-head"><h2>Letzte Sessions</h2><button class="link" data-nav="sessions">Alle</button></div>
+      ${recent.length ? recent.map((s) => `<button class="cv-row" data-sid="${s.id}">
+          <span class="cv-date">${pad2(new Date(s.date).getDate())}.${pad2(new Date(s.date).getMonth() + 1)}</span>
+          <span class="cv-desc">${altLine(s)}</span>
+          <span class="cv-val ${profit(s) < 0 ? 'down' : ''}">${signed(profit(s))}</span>
+        </button>`).join('')
+        : '<div class="empty">Tippe auf „Session starten“ für Deine erste Session.</div>'}
+    </div>`;
+  renderBackupHint($('#backupNoteAlt'));
+  drawCurveChart($('#cvChart'));
+}
+
+/** Verlauf der Gesamtbankroll über die letzten Einträge, mit Monatsgrenzen.
+    In echten Pixeln gezeichnet statt mit preserveAspectRatio="none", damit
+    der Endpunkt rund bleibt und die Striche nicht verzerren. */
+function drawCurveChart(box) {
+  const pts = curve('all').slice(-30);
+  if (pts.length < 2) {
+    box.innerHTML = '<div class="chart-empty">Mindestens 2 Einträge für den Verlauf</div>';
+    return;
+  }
+  const W = Math.max(200, Math.round(box.clientWidth || 335)), H = 150, P = 6, B = 145;
+  const ys = pts.map((p) => p.y);
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const span = (hi - lo) || Math.abs(hi) || 1;
+  const x = (i) => P + (i / (pts.length - 1)) * (W - 2 * P);
+  const y = (v) => B - 2 - ((v - lo) / span) * (B - 14);
+
+  const mk = (p) => { const d = new Date(p.d); return d.getFullYear() * 12 + d.getMonth(); };
+  const starts = [0];
+  for (let i = 1; i < pts.length; i++) if (mk(pts[i]) !== mk(pts[i - 1])) starts.push(i);
+  const grid = starts.slice(1).map((i) => {
+    const gx = ((x(i - 1) + x(i)) / 2).toFixed(1);
+    return `<line x1="${gx}" y1="0" x2="${gx}" y2="${B}" class="cv-mline"/>`;
+  }).join('');
+  // Monatsnamen nur, wenn der Abschnitt breit genug für das Wort ist.
+  const labels = starts.map((i, n) => {
+    const end = n + 1 < starts.length ? starts[n + 1] : pts.length - 1;
+    const left = n ? (x(i - 1) + x(i)) / 2 : 0;
+    const right = n + 1 < starts.length ? (x(end - 1) + x(end)) / 2 : W;
+    if (right - left < 64 && starts.length > 1) return '';
+    return `<span style="left:${(left / W * 100).toFixed(1)}%">${dfMonthName.format(new Date(pts[i].d))}</span>`;
+  }).join('');
+
+  const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.y).toFixed(1)}`).join(' ');
+  const last = pts.length - 1;
+  box.innerHTML = `<svg role="img" aria-label="Verlauf der Bankroll über die letzten ${pts.length} Einträge, von ${esc(money(pts[0].y))} auf ${esc(money(pts[last].y))}"
+      width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      <line x1="0" y1="${y(hi).toFixed(1)}" x2="${W}" y2="${y(hi).toFixed(1)}" class="cv-grid" stroke-dasharray="3 4"/>
+      <line x1="0" y1="${y((hi + lo) / 2).toFixed(1)}" x2="${W}" y2="${y((hi + lo) / 2).toFixed(1)}" class="cv-grid" stroke-dasharray="3 4"/>
+      <line x1="0" y1="${B}" x2="${W}" y2="${B}" class="cv-grid"/>
+      ${grid}
+      <polyline points="${line}" class="cv-line"/>
+      <circle cx="${x(last).toFixed(1)}" cy="${y(pts[last].y).toFixed(1)}" r="4.5" class="cv-dot"/>
+    </svg>
+    <div class="cv-months">${labels}</div>`;
+}
+
+/* ── Monatsblatt ───────────────────────────────────────────── */
+let monthView = null;   // {y, m} des angezeigten Monats, null = aktueller
+let monthPick = null;   // gewählter Tag als 'JJJJ-MM-TT'
+
+function shiftMonth(step) {
+  const now = new Date();
+  const cur = monthView || { y: now.getFullYear(), m: now.getMonth() };
+  const d = new Date(cur.y, cur.m + step, 1);
+  // Nicht in die Zukunft blättern, dort steht nichts.
+  if (d > new Date(now.getFullYear(), now.getMonth(), 1)) return;
+  monthView = { y: d.getFullYear(), m: d.getMonth() };
+  monthPick = null;
+  renderHome();
+}
+
+/** Gesamtbankroll unmittelbar vor dem Zeitpunkt `until`. */
+function rollAt(until) {
+  const pts = curve('all').filter((p) => new Date(p.d) < until);
+  return pts.length ? pts[pts.length - 1].y : 0;
+}
+
+/** Kurzer Betrag für die Kalenderkachel: ohne €, ab 10.000 in Tausend. */
+function tileAmount(v) {
+  const a = Math.abs(v);
+  const t = a >= 10000 ? nf0.format(a / 1000) + 'k' : nf0.format(a);
+  return (v > 0 ? '+' : v < 0 ? '−' : '±') + t;
+}
+
+function renderHomeMonth() {
+  const now = new Date();
+  const { y, m } = monthView || { y: now.getFullYear(), m: now.getMonth() };
+  const isNow = y === now.getFullYear() && m === now.getMonth();
+  const list = monthSessions(y, m);
+  const mp = list.reduce((a, s) => a + profit(s), 0);
+
+  const byDay = {};
+  list.forEach((s) => { (byDay[dayKey(new Date(s.date))] = byDay[dayKey(new Date(s.date))] || []).push(s); });
+  if (!monthPick || !byDay[monthPick]) monthPick = list.length ? dayKey(new Date(list[0].date)) : null;
+
+  const first = new Date(y, m, 1);
+  const lead = (first.getDay() + 6) % 7;            // Montag zuerst
+  const days = new Date(y, m + 1, 0).getDate();
+  const today = dayKey(now);
+  let cells = '<span></span>'.repeat(lead);
+  for (let d = 1; d <= days; d++) {
+    const k = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+    const ss = byDay[k];
+    if (ss) {
+      const v = ss.reduce((a, s) => a + profit(s), 0);
+      const word = ss.length > 1 ? `${ss.length} Sessions` : TYPES[ss[0].type].label;
+      cells += `<button class="mb-day ${v > 0 ? 'plus' : v < 0 ? 'minus' : 'even'}${k === monthPick ? ' sel' : ''}${k === today ? ' today' : ''}"
+          data-day="${k}" aria-label="${d}. ${dfMonthName.format(first)}, ${esc(word)}, ${esc(signed(v))}${k === monthPick ? ', ausgewählt' : ''}">
+          <span class="mb-n">${d}</span><span class="mb-v">${tileAmount(v)}</span></button>`;
+    } else {
+      const when = k === today ? 'today' : k < today ? 'past' : 'future';
+      cells += `<span class="mb-day ${when}"><span class="mb-n">${d}</span></span>`;
+    }
+  }
+
+  const pick = monthPick ? byDay[monthPick] : null;
+  const detail = pick
+    ? pick.map((s) => `<button class="mb-detail" data-sid="${s.id}">
+        <span class="mb-detail-main">
+          <span class="alt-k">${dfDayLong.format(new Date(s.date))}</span>
+          <span class="mb-detail-t">${altLine(s)}</span>
+          ${s.location && s.type !== 'casino' ? `<span class="alt-k">${esc(s.location)}</span>` : ''}
+        </span>
+        <span class="mb-detail-v ${profit(s) < 0 ? 'minus' : 'plus'}">${signed(profit(s))}</span>
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>
+      </button>`).join('')
+    : `<div class="mb-detail mb-detail-empty">Keine Session ${isNow ? 'in diesem Monat' : 'im ' + dfMonthName.format(first)}.</div>`;
+
+  $('#homeAlt').innerHTML = `
+    <div class="mb-head">
+      <div class="mb-title">
+        <div class="mb-nav">
+          <button class="mb-arrow" data-mnav="-1" aria-label="Vormonat"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5-7 7 7 7"/></svg></button>
+          <h2 class="mb-month">${dfMonthName.format(first)}${y !== now.getFullYear() ? ' ' + y : ''}</h2>
+          ${isNow ? '' : `<button class="mb-arrow" data-mnav="1" aria-label="Nächster Monat"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>`}
+        </div>
+        <span class="alt-k">${isNow ? 'Bankroll ' + money(bankroll('all')) : 'Bankroll am Monatsende ' + money(rollAt(new Date(y, m + 1, 1)))}</span>
+      </div>
+      <div class="mb-sum">
+        <span class="mb-big ${mp < 0 ? 'minus' : mp > 0 ? 'plus' : ''}">${signed(mp)}</span>
+        <span class="alt-k">${plural(list.length, 'Session', 'Sessions')}</span>
+      </div>
+    </div>
+    <div class="notice hidden" id="backupNoteAlt"></div>
+    <div class="mb-week" aria-hidden="true"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span><span>Sa</span><span>So</span></div>
+    <div class="mb-grid">${cells}</div>
+    <div class="mb-details">${detail}</div>
+    <div class="mb-rolls">${altRolls('mb-roll')}</div>
+    ${altStartBtn('mb-start', 'Session erfassen')}`;
+  renderBackupHint($('#backupNoteAlt'));
 }
 
 /* ── Chart (SVG, ohne Bibliothek) ───────────────────────────── */
@@ -2186,7 +2472,25 @@ function openStartBankroll(first) {
 /* ── Einstellungen / Backup ─────────────────────────────────── */
 function openSettings() {
   openSheet('Einstellungen', `
-    <div class="sec-title">Darstellung</div>
+    <div class="sec-title">Design</div>
+    <p class="hint" style="margin:8px 0 12px">Klassisch ist das bisherige Design. Kurve und
+      Monatsblatt ändern Übersicht, Schrift und Farben. Deine Daten bleiben dabei gleich.</p>
+    <div class="themes" id="uiPick">
+      ${UI_KEYS.map((k) => `
+        <button class="theme-card${db.ui === k ? ' on' : ''}" data-ui-pick="${k}">
+          <span class="tprev u-${k}">
+            <span class="tp-t"></span><span class="tp-s"></span><span class="tp-a"></span>
+            <span class="tp-c"></span><span class="tp-b"></span>
+          </span>
+          <span class="theme-name">
+            <span class="n">${esc(UIS[k].label)}</span>
+            <span class="d">${esc(UIS[k].note)}</span>
+          </span>
+        </button>`).join('')}
+    </div>
+    <div id="themeSec"${db.ui === 'classic' ? '' : ' class="hidden"'}>
+    <div class="divider" style="margin:18px 0"></div>
+    <div class="sec-title">Farbschema</div>
     <p class="hint" style="margin:8px 0 12px">Tippe einen Stil an — er greift sofort,
       auch die untere Leiste ändert sich mit.</p>
     <div class="themes" id="themePick">
@@ -2201,6 +2505,7 @@ function openSettings() {
             <span class="d">${esc(THEMES[k].note)}</span>
           </span>
         </button>`).join('')}
+    </div>
     </div>
     <div class="divider" style="margin:18px 0"></div>
     <div class="sec-title">Standard für neue Sessions</div>
@@ -2239,7 +2544,7 @@ function openSettings() {
     <p class="hint" style="margin:8px 0 12px">Deine Daten liegen nur in diesem Browser.
       Lade regelmäßig ein Backup herunter — z.B. in Google Drive. Die Datei enthält
       <b>alles</b>: Sessions, Buchungen, Gegner samt Notizen, Tags, Merkmale, Orte,
-      Stakes, Spielertyp-Namen, Standardwerte, Theme und eine laufende Session.
+      Stakes, Spielertyp-Namen, Standardwerte, Design, Theme und eine laufende Session.
       Nach dem Löschen der Browserdaten bekommst Du damit den vollen Stand zurück.</p>
     <div class="btn-row" style="margin-bottom:8px">
       <button class="btn" id="btnExport">Backup speichern</button>
@@ -2310,6 +2615,15 @@ function openSettings() {
     const b = e.target.closest('[data-th]'); if (!b) return;
     applyTheme(b.dataset.th); save();
     $$('.theme-card', $('#themePick')).forEach((c) => c.classList.toggle('on', c === b));
+  });
+  // Design ebenso sofort, die Übersicht hinter dem Sheet zieht gleich mit.
+  $('#uiPick').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ui-pick]'); if (!b) return;
+    applyUi(b.dataset.uiPick); save();
+    $$('.theme-card', $('#uiPick')).forEach((c) => c.classList.toggle('on', c === b));
+    $('#themeSec').classList.toggle('hidden', db.ui !== 'classic');
+    if (view === 'home') $('#viewTitle').textContent = db.ui === 'classic' ? TITLES.home : '';
+    render();
   });
 
   $('#btnStart').onclick = () => openStartBankroll(false);
@@ -2397,13 +2711,15 @@ function importBackup(file) {
       const stand = d.meta && d.meta.exported ? ` vom ${dfLong.format(new Date(d.meta.exported))}` : '';
       askSheet('Backup laden',
         `Das Backup${stand} enthält ${contentSummary(d)} — dazu Tags, Merkmale, Orte, `
-        + 'Stakes, Spielertyp-Namen, Standardwerte und das Theme. Alles davon wird '
+        + 'Stakes, Spielertyp-Namen, Standardwerte, Design und Theme. Alles davon wird '
         + `wiederhergestellt. Deine jetzigen Daten (${contentSummary(db)}) werden dabei ersetzt.`,
         'Laden', () => {
           // normalize() ergänzt, was in einem älteren Backup noch fehlt, und
           // wirft die Kopfzeile `meta` weg.
           db = normalize(d);
           applyTheme(db.theme);
+          monthView = null; monthPick = null;
+          $('#viewTitle').textContent = view === 'home' && db.ui !== 'classic' ? '' : TITLES[view];
           save(); closeSheet(); render(); toast('Backup geladen');
         }, openSettings);
     } catch (e) { infoSheet('Import fehlgeschlagen', e.message, openSettings); }
@@ -2981,6 +3297,11 @@ function wire() {
     const n = e.target.closest('[data-nav]'); if (n) { nav(n.dataset.nav); return; }
     const r = e.target.closest('[data-sid]'); if (r) { editSession(r.dataset.sid); return; }
     const p = e.target.closest('[data-player]'); if (p) { openPlayer(p.dataset.player); return; }
+    // Übersicht der Designs Kurve und Monatsblatt
+    const ro = e.target.closest('[data-roll-open]'); if (ro) { openBankroll(ro.dataset.rollOpen); return; }
+    const mn = e.target.closest('[data-mnav]'); if (mn) { shiftMonth(Number(mn.dataset.mnav)); return; }
+    const dy = e.target.closest('[data-day]'); if (dy) { monthPick = dy.dataset.day; renderHome(); return; }
+    if (e.target.closest('[data-act="new"]')) { $('#btnNew').click(); return; }
   });
   $('#btnNew').onclick = () => (db.live ? openLive() : newSession());
   $('#btnNewPlayer').onclick = newPlayerSheet;

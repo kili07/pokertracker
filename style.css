@@ -281,6 +281,102 @@
   --h2-track:.05em; --h2-case:none;
 }
 
+/* ── 2b. Designs Kurve und Monatsblatt ──────────────────────────
+   Eigene data-theme-Werte, gesetzt über das Design in den Einstellungen
+   (db.ui). Sie stehen nicht in der Farbschema-Auswahl: jedes Design hat
+   genau eine Palette. Schriften liegen in fonts/, Lizenzen in licenses/. */
+@font-face{font-family:"Space Grotesk";src:url(fonts/space-grotesk.woff2) format("woff2");
+  font-weight:300 700;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url(fonts/jetbrains-mono.woff2) format("woff2");
+  font-weight:100 800;font-display:swap}
+@font-face{font-family:"Archivo";src:url(fonts/archivo.woff2) format("woff2");
+  font-weight:100 900;font-display:swap}
+
+/* KURVE — fast schwarz, Gold als einzige Akzentfarbe, Zahlen in Mono.
+   Verluste in gedämpftem Lachs statt Alarmrot. */
+:root[data-theme="curve"]{
+  color-scheme:dark;
+  --bg:#111315; --bg-elev:#17191c;
+  --surface:#1a1d20; --surface-2:#22262a; --surface-3:#2a2e33;
+  --line:#2a2e33; --line-soft:#22262a;
+  --text:#eceae4; --text-2:#c9ccd1; --muted:#9a9fa6;
+  --accent:#f2b544; --accent-2:#f2b544;
+  --accent-soft:#2e2715; --accent-line:#6b5222; --on-accent:#111315;
+  --up:#f2b544; --down:#ff9c8f; --warn:#f2b544;
+
+  --shadow-1:none;
+  --shadow-2:0 8px 24px rgba(0,0,0,.5);
+  --shadow-pop:0 12px 34px rgba(0,0,0,.6);
+  --scrim:rgba(5,6,7,.7);
+  --grip:#3a3f45;
+  --focus:rgba(242,181,68,.42);
+
+  --live-bg:#2e2715; --live-line:#6b5222; --live-sub:#e3cf9f;
+
+  --pill-cash-bg:#2e2715; --pill-cash-fg:#f2b544;
+  --pill-mtt-bg:#2a2e33;  --pill-mtt-fg:#e4e6e9;
+  --pill-casino-bg:#22262a; --pill-casino-fg:#b4b9bf;
+
+  --card-face:#eceae4; --card-edge:#eceae4; --card-ink:#111315; --card-ink-red:#c0392b;
+  --seg-thumb:#2a2e33;
+
+  --toast-bg:#eceae4; --toast-fg:#111315;
+  --tabbar-bg:#111315; --tabbar-line:#2a2e33; --tabbar-blur:0px;
+  --fab-bg:var(--accent); --fab-ink:#111315; --fab-shadow:none;
+
+  /* Kurven-Farben je Bereich (Balken der Aufteilung) */
+  --cv-cash:#f2b544; --cv-mtt:#c9ccd1; --cv-casino:#5c6168;
+
+  --r-xs:4px; --r-sm:8px; --r:10px; --r-lg:12px; --r-xl:16px;
+  --font-ui:"Space Grotesk",system-ui,sans-serif;
+  --font-display:"Space Grotesk",system-ui,sans-serif;
+  --font-num:"JetBrains Mono",ui-monospace,monospace;
+  --h2-size:14px; --h2-track:0; --h2-case:none; --h2-weight:400;
+}
+
+/* MONATSBLATT — Papierweiß, Schwarz für Text und Knöpfe, Gewinn in Blau,
+   Verlust in Orange (nicht Rot/Grün, damit es auch farbenblind lesbar ist). */
+:root[data-theme="month"]{
+  color-scheme:light;
+  --bg:#f7f6f2; --bg-elev:#efede7;
+  --surface:#fff; --surface-2:#f2f0ea; --surface-3:#e7e4dc;
+  --line:#dcd9d0; --line-soft:#e8e5de;
+  --text:#1a1a1a; --text-2:#3f3c36; --muted:#5e5b54;
+  --accent:#1a1a1a; --accent-2:#1a1a1a;
+  --accent-soft:#e7e4dc; --accent-line:#b9b5aa; --on-accent:#fff;
+  --up:#1f4fbf; --down:#b4500c; --warn:#8a5a00;
+
+  --shadow-1:none;
+  --shadow-2:0 6px 20px rgba(26,26,26,.08);
+  --shadow-pop:0 14px 40px rgba(26,26,26,.16);
+  --scrim:rgba(26,26,26,.38);
+  --grip:#c9c5ba;
+  --focus:rgba(31,79,191,.32);
+
+  --live-bg:#e3e9f7; --live-line:#b8c6e8; --live-sub:#24427f;
+
+  --pill-cash-bg:#e3e9f7; --pill-cash-fg:#1f4fbf;
+  --pill-mtt-bg:#f6e6d9;  --pill-mtt-fg:#8f3f09;
+  --pill-casino-bg:#ecebe6; --pill-casino-fg:#3f3c36;
+
+  --card-face:#fff; --card-edge:#dcd9d0; --card-ink:#1a1a1a; --card-ink-red:#b4231c;
+  --seg-thumb:#fff;
+
+  --toast-bg:#1a1a1a; --toast-fg:#f7f6f2;
+  --tabbar-bg:#fff; --tabbar-line:#dcd9d0; --tabbar-blur:0px;
+  --fab-bg:#1a1a1a; --fab-ink:#fff; --fab-shadow:none;
+
+  /* Kalenderkacheln */
+  --mb-plus:#1f4fbf; --mb-minus:#b4500c; --mb-even:#5e5b54; --mb-on-tile:#fff;
+  --mb-past:#eceae3; --mb-future:#e2dfd7; --mb-future-ink:#6c685f;
+
+  --r-xs:5px; --r-sm:6px; --r:10px; --r-lg:12px; --r-xl:16px;
+  --font-ui:"Archivo",system-ui,sans-serif;
+  --font-display:"Archivo",system-ui,sans-serif;
+  --font-num:"Archivo",system-ui,sans-serif;
+  --h2-size:13px; --h2-track:0; --h2-case:none; --h2-weight:600;
+}
+
 /* ── 3. Basis ───────────────────────────────────────────────── */
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -859,6 +955,131 @@ fieldset{border:0;padding:0;margin:0}
   --p-accent:#ff9452;--p-tab:#241713;--p-r:9px;--p-tabr:0}
 .t-blossom{--p-bg:#faf3f2;--p-card:#fff;--p-line:#f0dcda;--p-text:#2c1a20;
   --p-accent:#c4447a;--p-tab:#fff;--p-r:8px;--p-tabr:0}
+
+/* ── Übersicht: Klassisch oder Design Kurve/Monatsblatt ─────── */
+.home-classic{display:flex;flex-direction:column;gap:14px}
+.home-alt{display:flex;flex-direction:column;padding-top:2px}
+.home-alt .notice{margin-top:14px}
+.alt-k{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.alt-v{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:20px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* Topbar ohne Titel: nur das Zahnrad, deshalb flacher */
+:root[data-ui] .topbar{padding-bottom:4px}
+
+/* Kurve */
+.cv-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.cv-total,.cv-month{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cv-month{align-items:flex-end;flex:none}
+.cv-big{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:clamp(32px,11vw,46px);
+  font-weight:700;line-height:1;letter-spacing:-.045em;white-space:nowrap}
+.cv-delta{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:20px;font-weight:600;white-space:nowrap}
+.cv-delta.acc{color:var(--accent)}
+.cv-chart{margin-top:18px;min-height:150px}
+.cv-chart svg{display:block}
+.cv-chart .chart-empty{height:150px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.cv-grid{stroke:var(--line);stroke-width:1}
+.cv-mline{stroke:var(--grip);stroke-width:1}
+.cv-line{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.cv-dot{fill:var(--accent)}
+.cv-months{position:relative;height:18px;margin-top:6px;font-family:var(--font-num);font-size:12px;color:var(--muted)}
+.cv-months span{position:absolute;top:0;padding-left:4px;white-space:nowrap}
+.cv-stats{margin-top:18px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.cv-stats>div{padding:12px 0;display:flex;flex-direction:column;gap:4px;min-width:0}
+.cv-stats>div+div{padding-left:14px;border-left:1px solid var(--line)}
+.cv-bar{margin-top:18px;display:flex;height:12px;gap:3px}
+.cv-seg{border-radius:2px;min-width:3px}
+.cv-cash{background:var(--cv-cash)} .cv-mtt{background:var(--cv-mtt)} .cv-casino{background:var(--cv-casino)}
+.cv-none{background:var(--line)}
+.cv-rolls{margin-top:6px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.cv-roll{min-height:48px;border:0;background:transparent;padding:0;display:flex;flex-direction:column;
+  align-items:flex-start;justify-content:center;gap:2px;text-align:left;min-width:0}
+.cv-roll .alt-v{font-size:15px}
+.cv-start,.mb-start{
+  height:56px;border:0;border-radius:var(--r);background:var(--accent);color:var(--on-accent);
+  font-size:18px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:10px;
+  transition:transform var(--fast) var(--ease);
+}
+.cv-start:active,.mb-start:active{transform:scale(.98)}
+.cv-start{margin-top:16px}
+.cv-recent{margin-top:20px;display:flex;flex-direction:column}
+.cv-recent-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.cv-row{display:flex;align-items:center;gap:8px;min-height:46px;border:0;border-top:1px solid var(--line);
+  background:transparent;padding:0;text-align:left;font-size:14px;width:100%}
+.cv-date{width:52px;flex:none;font-family:var(--font-num);color:var(--muted)}
+.cv-desc{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-val{flex:none;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-weight:600}
+
+/* Monatsblatt */
+.mb-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+.mb-title{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mb-nav{display:flex;align-items:center;margin-left:-12px;min-width:0}
+.mb-arrow{width:44px;height:44px;flex:none;border:0;background:transparent;color:var(--text);
+  padding:0;display:grid;place-items:center;border-radius:var(--r-sm)}
+.mb-arrow:active{background:var(--surface-3)}
+h2.mb-month{font-family:var(--font-display);font-size:clamp(26px,9vw,40px);line-height:1;font-weight:800;
+  letter-spacing:-.025em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-sum{display:flex;flex-direction:column;align-items:flex-end;flex:none}
+.mb-big{font-size:clamp(24px,8vw,34px);font-weight:800;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mb-big.plus,.mb-detail-v.plus{color:var(--mb-plus)}
+.mb-big.minus,.mb-detail-v.minus{color:var(--mb-minus)}
+.mb-week,.mb-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.mb-week{margin-top:20px;font-size:12px;color:var(--muted);text-align:center}
+.mb-grid{margin-top:6px;grid-auto-rows:44px}
+.mb-day{border:0;border-radius:6px;padding:4px 5px;font-size:11px;display:flex;flex-direction:column;
+  justify-content:space-between;align-items:flex-start;min-width:0;overflow:hidden;
+  font-variant-numeric:tabular-nums}
+.mb-day.past{background:var(--mb-past);color:var(--muted)}
+.mb-day.future{border:1px solid var(--mb-future);color:var(--mb-future-ink)}
+.mb-day.today{border:2px solid var(--text);padding:2px 3px;font-weight:600;color:var(--text)}
+button.mb-day{color:var(--mb-on-tile);transition:transform var(--fast) var(--ease)}
+button.mb-day:active{transform:scale(.94)}
+button.mb-day.plus{background:var(--mb-plus)}
+button.mb-day.minus{background:var(--mb-minus)}
+button.mb-day.even{background:var(--mb-even)}
+button.mb-day.today{border:0;padding:4px 5px;text-decoration:underline;text-underline-offset:2px}
+button.mb-day.sel{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text)}
+.mb-v{font-weight:600;font-size:12px;align-self:flex-end;max-width:100%;white-space:nowrap}
+.mb-details{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+.mb-detail{width:100%;padding:14px 16px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);color:var(--text);display:flex;align-items:center;gap:12px;text-align:left}
+.mb-detail svg{flex:none;color:var(--muted)}
+.mb-detail-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.mb-detail-t{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mb-detail-v{flex:none;font-size:22px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mb-detail-empty{justify-content:center;color:var(--muted);font-size:14px}
+.mb-rolls{margin-top:16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:2px solid var(--text)}
+.mb-roll{min-height:64px;border:0;background:transparent;padding:8px 0 0;display:flex;flex-direction:column;
+  align-items:flex-start;gap:2px;text-align:left;min-width:0}
+.mb-roll+.mb-roll{border-left:1px solid var(--line);padding-left:12px}
+.mb-roll .alt-v{font-weight:800}
+.mb-start{margin-top:14px}
+
+/* Tabbar der Designs: Wörter statt Symbole, aktiver Eintrag unterstrichen,
+   ＋ als eckiger Knopf. */
+:root[data-ui] .tabbar{grid-template-columns:repeat(5,minmax(0,1fr)) 54px;column-gap:2px;padding-left:4px;padding-right:2px;border-top:1px solid var(--tabbar-line)}
+:root[data-ui] .tabbar button[data-nav] svg{display:none}
+:root[data-ui] .tabbar button[data-nav]{font-size:clamp(11px,3.3vw,12.5px);font-weight:500;letter-spacing:0;color:var(--muted);
+  padding:0;height:48px;justify-content:center;min-width:0}
+:root[data-ui] .tabbar button[data-nav] span{padding:4px 0;border-bottom:2px solid transparent;
+  white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+:root[data-ui] .tabbar button.on{color:var(--text);font-weight:600}
+:root[data-ui] .tabbar button.on span{border-bottom-color:var(--accent)}
+:root[data-ui="month"] .tabbar button.on span{border-bottom-width:3px}
+:root[data-ui] .fab-tab svg{border-radius:var(--r-sm);width:40px;height:40px;padding:9px}
+
+/* Vorschau-Kacheln der Design-Auswahl (feste Farben, siehe .tprev) */
+.u-classic{--p-bg:#0b0e14;--p-card:#151b26;--p-line:#262f40;--p-text:#e8edf5;
+  --p-accent:#4d8dff;--p-tab:#11161f;--p-r:7px;--p-tabr:6px}
+.u-curve{--p-bg:#111315;--p-card:#111315;--p-line:#2a2e33;--p-text:#eceae4;
+  --p-accent:#f2b544;--p-tab:#111315;--p-r:2px;--p-tabr:0}
+.u-month{--p-bg:#f7f6f2;--p-card:#fff;--p-line:#dcd9d0;--p-text:#1a1a1a;
+  --p-accent:#1f4fbf;--p-tab:#fff;--p-r:3px;--p-tabr:0}
+/* Kurve: Linie statt Karte; Monatsblatt: Kachelraster */
+.u-curve .tp-c{border:0;border-bottom:2px solid var(--p-accent);border-radius:0;
+  background:linear-gradient(165deg,transparent 48%,var(--p-accent) 49%,var(--p-accent) 54%,transparent 55%)}
+.u-month .tp-c{background:repeating-linear-gradient(90deg,var(--p-accent) 0 9px,transparent 9px 13px,#b4500c 13px 22px,transparent 22px 26px,#eceae3 26px 35px,transparent 35px 39px);
+  border:0}
 
 /* ── Breitere Bildschirme ───────────────────────────────────── */
 @media(min-width:560px){

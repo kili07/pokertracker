@@ -1,6 +1,6 @@
 /* Service Worker — App offline verfügbar halten.
    Bei jeder Änderung an den Dateien CACHE hochzählen. */
-const CACHE = 'pokertracker-v11';
+const CACHE = 'pokertracker-v12';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,9 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './fonts/space-grotesk.woff2',
+  './fonts/jetbrains-mono.woff2',
+  './fonts/archivo.woff2',
 ];
 
 self.addEventListener('install', (e) => {
